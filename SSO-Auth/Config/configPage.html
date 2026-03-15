@@ -18,6 +18,7 @@
               is="emby-button"
               class="raised button-alt headerHelpButton"
               target="_blank"
+              rel="noopener noreferrer"
               href="https://github.com/9p4/jellyfin-plugin-sso"
               >${Help}</a
             >
@@ -26,9 +27,8 @@
             <i>Note:</i>
             Making changes to this configuration requires a restart of Jellyfin.
             <br />
-            This plug-in is in early development, not all configuration options
-            have been implented in the UI, for example, SAML provider
-            configuration has not been implemented.
+            This plug-in is in early development; some advanced options may
+            require configuration via the API or config file.
             <br />
             See the
             <a
@@ -657,8 +657,29 @@
                   </div>
                 </div>
 
+                <div
+                  class="checkboxContainer checkboxContainer-withDescription"
+                >
+                  <label>
+                    <input
+                      is="emby-checkbox"
+                      id="NewPath"
+                      name="NewPath"
+                      type="checkbox"
+                      class="sso-toggle"
+                    />
+                    <span>Use descriptive redirect paths</span>
+                  </label>
+                  <div class="fieldDescription checkboxFieldDescription">
+                    When enabled, uses /sso/OID/redirect/ and /sso/SAML/post/
+                    style paths instead of short /r/ and /p/ paths.
+                  </div>
+                </div>
+
                 <div class="inputContainer">
-                  <label class="inputLabel inputLabelUnfocused" for="RoleClaim"
+                  <label
+                    class="inputLabel inputLabelUnfocused"
+                    for="SchemeOverride"
                     >Scheme Override</label
                   >
                   <input
@@ -674,7 +695,9 @@
                 </div>
 
                 <div class="inputContainer">
-                  <label class="inputLabel inputLabelUnfocused" for="RoleClaim"
+                  <label
+                    class="inputLabel inputLabelUnfocused"
+                    for="PortOverride"
                     >Port Override</label
                   >
                   <input
@@ -685,12 +708,387 @@
                   />
                   <div class="fieldDescription">
                     If the plugin is redirecting to an incorrect port, set this
-                    to the appropiate port
+                    to the appropriate port
                   </div>
                 </div>
 
                 <button
                   id="SaveProvider"
+                  is="emby-button"
+                  type="button"
+                  class="raised button-submit block emby-button"
+                >
+                  <span>Save</span>
+                </button>
+              </div>
+            </div>
+          </form>
+
+          <form id="sso-saml-provider-form" class="esqConfigurationForm">
+            <div
+              is="emby-collapse"
+              class="verticalSection verticalSection-extrabottompadding"
+              title="Select SAML Provider to Modify"
+            >
+              <div class="collapseContent">
+                <div class="selectContainer">
+                  <label class="selectLabel" for="selectSamlProvider"
+                    >Name of SAML Provider:</label
+                  >
+                  <select
+                    is="emby-select"
+                    id="selectSamlProvider"
+                    name="selectSamlProvider"
+                    class="emby-select-withcolor emby-select"
+                  ></select>
+                  <div class="selectArrowContainer">
+                    <div style="visibility: hidden; display: none">0</div>
+                    <span
+                      class="selectArrow material-icons keyboard_arrow_down"
+                      aria-hidden="true"
+                    ></span>
+                  </div>
+                </div>
+                <button
+                  id="LoadSamlProvider"
+                  is="emby-button"
+                  type="button"
+                  class="raised button-submit block emby-button"
+                >
+                  <span>Load Provider</span>
+                </button>
+                <button
+                  id="DeleteSamlProvider"
+                  is="emby-button"
+                  type="button"
+                  class="raised button-delete block emby-button"
+                >
+                  <span>Delete Provider</span>
+                </button>
+              </div>
+            </div>
+            <div
+              is="emby-collapse"
+              data-expanded="true"
+              title="Add / Update SAML Provider Configuration"
+              class="verticalSection verticalSection-extrabottompadding"
+            >
+              <div class="collapseContent">
+                <div class="inputContainer">
+                  <label
+                    class="inputLabel inputLabelUnfocused"
+                    for="SamlProviderName"
+                    >Name of SAML Provider:</label
+                  >
+                  <input
+                    is="emby-input"
+                    id="SamlProviderName"
+                    required=""
+                    type="text"
+                    class="sso-text"
+                  />
+                  <div class="fieldDescription">
+                    The name used by Jellyfin to identify the SAML provider. If
+                    a provider with this name exists, its settings will be
+                    updated.
+                  </div>
+                </div>
+                <div class="inputContainer">
+                  <label
+                    class="inputLabel inputLabelUnfocused"
+                    for="SamlEndpoint"
+                    >SAML Endpoint:</label
+                  >
+                  <input
+                    is="emby-input"
+                    id="SamlEndpoint"
+                    required=""
+                    type="text"
+                    class="sso-text"
+                  />
+                  <div class="fieldDescription">
+                    The SAML 2.0 IdP endpoint URL (e.g.
+                    https://idp.example.com/sso).
+                  </div>
+                </div>
+                <div class="inputContainer">
+                  <label
+                    class="inputLabel inputLabelUnfocused"
+                    for="SamlClientId"
+                    >SAML Client ID (Entity ID):</label
+                  >
+                  <input
+                    is="emby-input"
+                    id="SamlClientId"
+                    required=""
+                    type="text"
+                    class="sso-text"
+                  />
+                  <div class="fieldDescription">
+                    The entity ID or audience URI configured on the IdP for this
+                    Jellyfin instance.
+                  </div>
+                </div>
+                <div class="inputContainer">
+                  <label
+                    class="inputLabel inputLabelUnfocused"
+                    for="SamlCertificate"
+                    >SAML IdP certificate (PEM):</label
+                  >
+                  <textarea
+                    is="emby-textarea"
+                    id="SamlCertificate"
+                    type="text"
+                    class="sso-textarea-cert emby-textarea"
+                    rows="6"
+                  ></textarea>
+                  <div class="fieldDescription">
+                    The IdP signing certificate in PEM format (including
+                    -----BEGIN CERTIFICATE----- and -----END CERTIFICATE-----).
+                  </div>
+                </div>
+                <div
+                  class="checkboxContainer checkboxContainer-withDescription"
+                >
+                  <label>
+                    <input
+                      is="emby-checkbox"
+                      id="SamlEnabled"
+                      name="SamlEnabled"
+                      type="checkbox"
+                      class="sso-toggle sso-saml-toggle"
+                    />
+                    <span>Enabled</span>
+                  </label>
+                </div>
+                <div
+                  class="checkboxContainer checkboxContainer-withDescription"
+                >
+                  <label>
+                    <input
+                      is="emby-checkbox"
+                      id="SamlEnableAuthorization"
+                      name="SamlEnableAuthorization"
+                      type="checkbox"
+                      class="sso-toggle sso-saml-toggle"
+                    />
+                    <span>Enable Authorization by Plugin</span>
+                  </label>
+                  <div class="fieldDescription checkboxFieldDescription">
+                    If false, the user will start with no permissions and an
+                    administrator will add them.
+                  </div>
+                </div>
+                <div
+                  class="checkboxContainer checkboxContainer-withDescription"
+                >
+                  <label>
+                    <input
+                      is="emby-checkbox"
+                      id="SamlEnableAllFolders"
+                      name="SamlEnableAllFolders"
+                      type="checkbox"
+                      class="sso-toggle sso-saml-toggle"
+                    />
+                    <span>Enable All Folders</span>
+                  </label>
+                </div>
+                <div class="inputContainer">
+                  <label
+                    class="inputLabel inputLabelUnfocused"
+                    for="SamlEnabledFolders"
+                    >Enabled Folders:</label
+                  >
+                  <div
+                    id="SamlEnabledFolders"
+                    class="checkboxList paperList checkboxList-paperList sso-folder-list sso-bordered-list sso-saml-folders"
+                  ></div>
+                </div>
+                <div class="inputContainer">
+                  <label class="inputLabel inputLabelUnfocused" for="SamlRoles"
+                    >Roles:</label
+                  >
+                  <textarea
+                    is="emby-textarea"
+                    id="SamlRoles"
+                    type="text"
+                    class="sso-line-list sso-saml-line-list emby-textarea"
+                  ></textarea>
+                  <div class="fieldDescription">
+                    One role per line; user must have one of these roles to
+                    authenticate.
+                  </div>
+                </div>
+                <div class="inputContainer">
+                  <label
+                    class="inputLabel inputLabelUnfocused"
+                    for="SamlAdminRoles"
+                    >Admin Roles:</label
+                  >
+                  <textarea
+                    is="emby-textarea"
+                    id="SamlAdminRoles"
+                    type="text"
+                    class="sso-line-list sso-saml-line-list emby-textarea"
+                  ></textarea>
+                </div>
+                <div
+                  class="checkboxContainer checkboxContainer-withDescription"
+                >
+                  <label>
+                    <input
+                      is="emby-checkbox"
+                      id="SamlEnableFolderRoles"
+                      name="SamlEnableFolderRoles"
+                      type="checkbox"
+                      class="sso-toggle sso-saml-toggle"
+                    />
+                    <span>Enable Role-Based Folder Access</span>
+                  </label>
+                </div>
+                <div class="inputContainer">
+                  <label
+                    class="inputLabel inputLabelUnfocused"
+                    for="SamlFolderRoleMapping"
+                    >Folder Role Mapping:</label
+                  >
+                  <button
+                    is="emby-button"
+                    id="AddSamlRoleMapping"
+                    type="button"
+                    class="fab btnAddFolder submit"
+                    title="Add"
+                  >
+                    <span class="material-icons add" aria-hidden="true"></span>
+                  </button>
+                  <div
+                    id="SamlFolderRoleMapping"
+                    class="sso-role-map sso-saml-role-map"
+                  ></div>
+                </div>
+                <div
+                  class="checkboxContainer checkboxContainer-withDescription"
+                >
+                  <label>
+                    <input
+                      is="emby-checkbox"
+                      id="SamlEnableLiveTvRoles"
+                      name="SamlEnableLiveTvRoles"
+                      type="checkbox"
+                      class="sso-toggle sso-saml-toggle"
+                    />
+                    <span>Enable Live TV RBAC</span>
+                  </label>
+                </div>
+                <div class="inputContainer">
+                  <label
+                    class="inputLabel inputLabelUnfocused"
+                    for="SamlLiveTvRoles"
+                    >Live TV Roles:</label
+                  >
+                  <textarea
+                    is="emby-textarea"
+                    id="SamlLiveTvRoles"
+                    type="text"
+                    class="sso-line-list sso-saml-line-list emby-textarea"
+                  ></textarea>
+                </div>
+                <div class="inputContainer">
+                  <label
+                    class="inputLabel inputLabelUnfocused"
+                    for="SamlLiveTvManagementRoles"
+                    >Live TV Management Roles:</label
+                  >
+                  <textarea
+                    is="emby-textarea"
+                    id="SamlLiveTvManagementRoles"
+                    type="text"
+                    class="sso-line-list sso-saml-line-list emby-textarea"
+                  ></textarea>
+                </div>
+                <div
+                  class="checkboxContainer checkboxContainer-withDescription"
+                >
+                  <label>
+                    <input
+                      is="emby-checkbox"
+                      id="SamlEnableLiveTv"
+                      name="SamlEnableLiveTv"
+                      type="checkbox"
+                      class="sso-toggle sso-saml-toggle"
+                    />
+                    <span>Enable Live TV Access By Default</span>
+                  </label>
+                </div>
+                <div
+                  class="checkboxContainer checkboxContainer-withDescription"
+                >
+                  <label>
+                    <input
+                      is="emby-checkbox"
+                      id="SamlEnableLiveTvManagement"
+                      name="SamlEnableLiveTvManagement"
+                      type="checkbox"
+                      class="sso-toggle sso-saml-toggle"
+                    />
+                    <span>Enable Live TV Management By Default</span>
+                  </label>
+                </div>
+                <div class="inputContainer">
+                  <label
+                    class="inputLabel inputLabelUnfocused"
+                    for="SamlDefaultProvider"
+                    >Set default Provider:</label
+                  >
+                  <input
+                    is="emby-input"
+                    id="SamlDefaultProvider"
+                    type="text"
+                    class="sso-text sso-saml-text"
+                  />
+                </div>
+                <div
+                  class="checkboxContainer checkboxContainer-withDescription"
+                >
+                  <label>
+                    <input
+                      is="emby-checkbox"
+                      id="SamlNewPath"
+                      name="SamlNewPath"
+                      type="checkbox"
+                      class="sso-toggle sso-saml-toggle"
+                    />
+                    <span>Use descriptive redirect paths</span>
+                  </label>
+                </div>
+                <div class="inputContainer">
+                  <label
+                    class="inputLabel inputLabelUnfocused"
+                    for="SamlSchemeOverride"
+                    >Scheme Override</label
+                  >
+                  <input
+                    is="emby-input"
+                    id="SamlSchemeOverride"
+                    type="text"
+                    class="sso-text sso-saml-text"
+                  />
+                </div>
+                <div class="inputContainer">
+                  <label
+                    class="inputLabel inputLabelUnfocused"
+                    for="SamlPortOverride"
+                    >Port Override</label
+                  >
+                  <input
+                    is="emby-input"
+                    id="SamlPortOverride"
+                    type="text"
+                    class="sso-text sso-saml-text"
+                  />
+                </div>
+                <button
+                  id="SaveSamlProvider"
                   is="emby-button"
                   type="button"
                   class="raised button-submit block emby-button"

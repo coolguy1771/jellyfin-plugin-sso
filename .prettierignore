@@ -1,1 +1,3 @@
 *.min.js
+# Template with {{placeholders}} replaced at runtime by WebResponse.Generator
+SSO-Auth/Views/callbackPayload.js

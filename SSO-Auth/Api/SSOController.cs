@@ -14,6 +14,8 @@ using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Database.Implementations.Enums;
 using Jellyfin.Plugin.SSO_Auth.Config;
 using Jellyfin.Plugin.SSO_Auth.Helpers;
+using Jellyfin.Plugin.SSO_Auth.Models;
+using Jellyfin.Plugin.SSO_Auth.Services;
 using MediaBrowser.Common.Api;
 using MediaBrowser.Controller.Authentication;
 using MediaBrowser.Controller.Configuration;
@@ -48,7 +50,7 @@ public class SSOController : ControllerBase
     private readonly IProviderManager _providerManager;
     private readonly IServerConfigurationManager _serverConfigurationManager;
     private readonly IHttpClientFactory _httpClientFactory;
-    private static readonly IDictionary<string, TimedAuthorizeState> StateManager = new Dictionary<string, TimedAuthorizeState>();
+    private readonly IOidStateStore _stateStore;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="SSOController"/> class.
@@ -62,6 +64,7 @@ public class SSOController : ControllerBase
     /// <param name="providerManager">Instance of the <see cref="IProviderManager"/> interface.</param>
     /// <param name="httpClientFactory">Instance of the <see cref="IHttpClientFactory"/> interface.</param>
     /// <param name="serverConfigurationManager">Instance of the <see cref="IServerConfigurationManager"/> interface.</param>
+    /// <param name="stateStore">State store for OIDC flow; registered by <see cref="SSOPluginServiceRegistrator"/> in production.</param>
     public SSOController(
         ILogger<SSOController> logger,
         ILoggerFactory loggerFactory,
@@ -71,7 +74,8 @@ public class SSOController : ControllerBase
         ICryptoProvider cryptoProvider,
         IProviderManager providerManager,
         IHttpClientFactory httpClientFactory,
-        IServerConfigurationManager serverConfigurationManager)
+        IServerConfigurationManager serverConfigurationManager,
+        IOidStateStore stateStore)
     {
         _sessionManager = sessionManager;
         _userManager = userManager;
@@ -82,6 +86,7 @@ public class SSOController : ControllerBase
         _providerManager = providerManager;
         _serverConfigurationManager = serverConfigurationManager;
         _httpClientFactory = httpClientFactory;
+        _stateStore = stateStore;
         _logger.LogInformation("SSO Controller initialized");
     }
 
@@ -98,12 +103,7 @@ public class SSOController : ControllerBase
         [FromRoute] string provider,
         [FromQuery] string state) // Although this is a GET function, this function is called `Post` for consistency with SAML
     {
-        OidConfig config;
-        try
-        {
-            config = SSOPlugin.Instance.Configuration.OidConfigs[provider];
-        }
-        catch (KeyNotFoundException)
+        if (!TryGetOidConfig(provider, out var config))
         {
             return BadRequest("No matching provider found");
         }
@@ -115,37 +115,14 @@ public class SSOController : ControllerBase
                 return BadRequest("Missing state");
             }
 
-            if (!StateManager.TryGetValue(state, out var timedState))
+            if (!_stateStore.TryGetValue(state, out var timedState))
             {
                 return BadRequest("Invalid or expired state");
             }
 
-            var scopes = config.OidScopes == null ? new string[2] : config.OidScopes;
-            var options = new OidcClientOptions
-            {
-                Authority = config.OidEndpoint?.Trim(),
-                ClientId = config.OidClientId?.Trim(),
-                ClientSecret = config.OidSecret?.Trim(),
-                RedirectUri = GetRequestBase(config.SchemeOverride, config.PortOverride) + $"/sso/OID/{(Request.Path.Value.Contains("/start/", StringComparison.InvariantCultureIgnoreCase) ? "redirect" : "r")}/" + provider,
-                Scope = string.Join(" ", scopes.Prepend("openid profile")),
-                DisablePushedAuthorization = config.DisablePushedAuthorization,
-                LoggerFactory = _loggerFactory,
-                LoadProfile = !config.DoNotLoadProfile,
-                HttpClientFactory = o =>
-                {
-                    var client = _httpClientFactory.CreateClient();
-                    System.Reflection.Assembly assembly = System.Reflection.Assembly.GetExecutingAssembly();
-                    System.Diagnostics.FileVersionInfo fvi = System.Diagnostics.FileVersionInfo.GetVersionInfo(assembly.Location);
-                    string version = fvi.FileVersion;
-                    client.DefaultRequestHeaders.UserAgent.ParseAdd($"Jellyfin-Plugin-SSO-Auth +{version} (https://github.com/9p4/jellyfin-plugin-sso)");
-                    return client;
-                }
-            };
-            var oidEndpointUri = new Uri(config.OidEndpoint?.Trim());
-            options.Policy.Discovery.AdditionalEndpointBaseAddresses.Add(oidEndpointUri.GetLeftPart(UriPartial.Authority));
-            options.Policy.Discovery.ValidateEndpoints = !config.DoNotValidateEndpoints; // For Google and other providers with different endpoints
-            options.Policy.Discovery.RequireHttps = !config.DisableHttps;
-            options.Policy.Discovery.ValidateIssuerName = !config.DoNotValidateIssuerName;
+            var pathSegment = Request.Path.Value?.Contains("/OID/redirect", StringComparison.InvariantCultureIgnoreCase) == true ? "redirect" : "r";
+            var redirectUri = GetRequestBase(config.SchemeOverride, config.PortOverride) + $"/sso/OID/{pathSegment}/" + provider;
+            var options = BuildOidcOptions(config, redirectUri);
             var oidcClient = new OidcClient(options);
             var currentState = timedState.State;
             var result = await oidcClient.ProcessResponseAsync(Request.QueryString.Value, currentState).ConfigureAwait(false);
@@ -320,7 +297,7 @@ public class SSOController : ControllerBase
                     if (claim.Type == "sub")
                     {
                         timedState.Username = claim.Value;
-                        if (config.Roles.Length == 0)
+                        if ((config.Roles?.Length ?? 0) == 0)
                         {
                             timedState.Valid = true;
                         }
@@ -341,7 +318,7 @@ public class SSOController : ControllerBase
                     "OpenID user {Username} has one or more incorrect role claims: {@Claims}. Expected any one of: {@ExpectedClaims}",
                     timedState.Username,
                     result.User.Claims.Select(o => new { o.Type, o.Value }),
-                    config.Roles);
+                    config.Roles ?? Array.Empty<string>());
 
                 return ReturnError(StatusCodes.Status401Unauthorized, "Error. Check permissions.");
             }
@@ -362,14 +339,9 @@ public class SSOController : ControllerBase
     public async Task<ActionResult> OidChallenge(string provider, [FromQuery] bool isLinking = false)
     {
         Invalidate();
-        OidConfig config;
-        try
+        if (!TryGetOidConfig(provider, out var config))
         {
-            config = SSOPlugin.Instance.Configuration.OidConfigs[provider];
-        }
-        catch (KeyNotFoundException)
-        {
-            throw new ArgumentException("Provider does not exist");
+            return BadRequest("No matching provider found");
         }
 
         if (config.Enabled)
@@ -377,38 +349,13 @@ public class SSOController : ControllerBase
             bool newPath = config.NewPath;
             if (!isLinking)
             {
-                newPath = Request.Path.Value.Contains("/start/", StringComparison.InvariantCultureIgnoreCase);
+                newPath = Request.Path.Value?.Contains("/OID/start", StringComparison.InvariantCultureIgnoreCase) == true;
                 config.NewPath = newPath;
             }
 
-            string redirectUri = GetRequestBase(config.SchemeOverride, config.PortOverride) + $"/sso/OID/{(newPath ? "redirect" : "r")}/" + provider;
-
-            var options = new OidcClientOptions
-            {
-                Authority = config.OidEndpoint?.Trim(),
-                ClientId = config.OidClientId?.Trim(),
-                ClientSecret = config.OidSecret?.Trim(),
-                RedirectUri = redirectUri,
-                Scope = string.Join(" ", config.OidScopes.Prepend("openid profile")),
-                DisablePushedAuthorization = config.DisablePushedAuthorization,
-                LoggerFactory = _loggerFactory,
-                LoadProfile = !config.DoNotLoadProfile,
-                HttpClientFactory = o =>
-                {
-                    var client = _httpClientFactory.CreateClient();
-                    System.Reflection.Assembly assembly = System.Reflection.Assembly.GetExecutingAssembly();
-                    System.Diagnostics.FileVersionInfo fvi = System.Diagnostics.FileVersionInfo.GetVersionInfo(assembly.Location);
-                    string version = fvi.FileVersion;
-
-                    client.DefaultRequestHeaders.UserAgent.ParseAdd($"Jellyfin-Plugin-SSO-Auth +{version} (https://github.com/9p4/jellyfin-plugin-sso)");
-                    return client;
-                }
-            };
-            var oidEndpointUri = new Uri(config.OidEndpoint?.Trim());
-            options.Policy.Discovery.AdditionalEndpointBaseAddresses.Add(oidEndpointUri.GetLeftPart(UriPartial.Authority));
-            options.Policy.Discovery.ValidateEndpoints = !config.DoNotValidateEndpoints; // For Google and other providers with different endpoints
-            options.Policy.Discovery.RequireHttps = !config.DisableHttps;
-            options.Policy.Discovery.ValidateIssuerName = !config.DoNotValidateIssuerName;
+            var pathSegment = newPath ? "redirect" : "r";
+            string redirectUri = GetRequestBase(config.SchemeOverride, config.PortOverride) + $"/sso/OID/{pathSegment}/" + provider;
+            var options = BuildOidcOptions(config, redirectUri);
             var oidcClient = new OidcClient(options);
             var state = await oidcClient.PrepareLoginAsync().ConfigureAwait(false);
 
@@ -417,14 +364,12 @@ public class SSOController : ControllerBase
                 return ReturnError(StatusCodes.Status400BadRequest, $"Error preparing login: {state.Error} - {state.ErrorDescription}");
             }
 
-            StateManager.Add(state.State, new TimedAuthorizeState(state, DateTime.Now));
-
-            // Track whether this is a linking request or not.
-            StateManager[state.State].IsLinking = isLinking;
+            var timedState = new TimedAuthorizeState(state, DateTime.UtcNow) { IsLinking = isLinking };
+            _stateStore.Add(state.State, timedState);
             return Redirect(state.StartUrl);
         }
 
-        throw new ArgumentException("Provider does not exist");
+        return BadRequest("No matching provider found");
     }
 
     /// <summary>
@@ -432,26 +377,56 @@ public class SSOController : ControllerBase
     /// </summary>
     /// <param name="provider">The name of the provider to add.</param>
     /// <param name="config">The OID configuration (deserialized from a JSON post).</param>
+    /// <returns>Ok on success; BadRequest with ApiError on validation failure.</returns>
     [Authorize(Policy = Policies.RequiresElevation)]
     [HttpPost("OID/Add/{provider}")]
-    public void OidAdd(string provider, [FromBody] OidConfig config)
+    public ActionResult OidAdd(string provider, [FromBody] OidConfig config)
     {
+        if (string.IsNullOrWhiteSpace(provider))
+        {
+            return BadRequest(new ApiError { Code = "InvalidProvider", Message = "Provider name is required." });
+        }
+
+        if (config == null)
+        {
+            return BadRequest(new ApiError { Code = "InvalidConfig", Message = "Configuration body is required." });
+        }
+
+        if (string.IsNullOrWhiteSpace(config.OidEndpoint))
+        {
+            return BadRequest(new ApiError { Code = "InvalidConfig", Message = "OpenID endpoint is required." });
+        }
+
+        if (!Uri.TryCreate(config.OidEndpoint.Trim(), UriKind.Absolute, out var endpointUri)
+            || !(string.Equals(endpointUri.Scheme, "http", StringComparison.OrdinalIgnoreCase) || string.Equals(endpointUri.Scheme, "https", StringComparison.OrdinalIgnoreCase)))
+        {
+            return BadRequest(new ApiError { Code = "InvalidConfig", Message = "OpenID endpoint must be a valid HTTP or HTTPS URL." });
+        }
+
+        if (string.IsNullOrWhiteSpace(config.OidClientId))
+        {
+            return BadRequest(new ApiError { Code = "InvalidConfig", Message = "OpenID client ID is required." });
+        }
+
         var configuration = SSOPlugin.Instance.Configuration;
         configuration.OidConfigs[provider] = config;
         SSOPlugin.Instance.UpdateConfiguration(configuration);
+        return Ok();
     }
 
     /// <summary>
     /// Deletes an OpenID provider.
     /// </summary>
     /// <param name="provider">Name of provider to delete.</param>
+    /// <returns>Ok on success.</returns>
     [Authorize(Policy = Policies.RequiresElevation)]
-    [HttpGet("OID/Del/{provider}")]
-    public void OidDel(string provider)
+    [HttpDelete("OID/Del/{provider}")]
+    public ActionResult OidDel(string provider)
     {
         var configuration = SSOPlugin.Instance.Configuration;
         configuration.OidConfigs.Remove(provider);
         SSOPlugin.Instance.UpdateConfiguration(configuration);
+        return Ok();
     }
 
     /// <summary>
@@ -493,7 +468,7 @@ public class SSOController : ControllerBase
     [HttpGet("OID/States")]
     public ActionResult OidStates()
     {
-        return Ok(StateManager);
+        return Ok(_stateStore.GetSnapshot());
     }
 
     /// <summary>
@@ -507,19 +482,14 @@ public class SSOController : ControllerBase
     [Produces(MediaTypeNames.Application.Json)]
     public async Task<ActionResult> OidAuth(string provider, [FromBody] AuthResponse response)
     {
-        OidConfig config;
-        try
-        {
-            config = SSOPlugin.Instance.Configuration.OidConfigs[provider];
-        }
-        catch (KeyNotFoundException)
+        if (!TryGetOidConfig(provider, out var config))
         {
             return BadRequest("No matching provider found");
         }
 
         if (config.Enabled)
         {
-            foreach (var kvp in StateManager)
+            foreach (var kvp in _stateStore.GetSnapshot())
             {
                 if (kvp.Value.State.State.Equals(response.Data) && kvp.Value.Valid)
                 {
@@ -537,12 +507,13 @@ public class SSOController : ControllerBase
                         config.DefaultProvider?.Trim(),
                         kvp.Value.AvatarURL)
                         .ConfigureAwait(false);
-                    StateManager.Remove(kvp.Key);
+                    _stateStore.Remove(kvp.Key);
                     return Ok(authenticationResult);
                 }
             }
         }
 
+        _logger.LogWarning("OID auth failed: no valid state found for provider {Provider}", provider);
         return Problem("Something went wrong");
     }
 
@@ -559,12 +530,7 @@ public class SSOController : ControllerBase
     [HttpPost("SAML/post/{provider}")]
     public ActionResult SamlPost(string provider, [FromQuery] string relayState = null)
     {
-        SamlConfig config;
-        try
-        {
-            config = SSOPlugin.Instance.Configuration.SamlConfigs[provider];
-        }
-        catch (KeyNotFoundException)
+        if (!TryGetSamlConfig(provider, out var config))
         {
             return BadRequest("No matching provider found");
         }
@@ -581,15 +547,16 @@ public class SSOController : ControllerBase
             bool valid = false;
 
             // If no roles are configured, don't use RBAC
-            if (config.Roles.Length == 0)
+            if ((config.Roles?.Length ?? 0) == 0)
             {
                 valid = true;
             }
 
             // Check if user is allowed to log in based on roles
+            var roles = config.Roles ?? Array.Empty<string>();
             foreach (string role in samlResponse.GetCustomAttributes("Role"))
             {
-                foreach (string allowedRole in config.Roles)
+                foreach (string allowedRole in roles)
                 {
                     if (allowedRole.Equals(role))
                     {
@@ -614,7 +581,7 @@ public class SSOController : ControllerBase
                 "SAML user: {UserId} has insufficient roles: {@Roles}. Expected any one of: {@ExpectedRoles}",
                 samlResponse.GetNameID(),
                 samlResponse.GetCustomAttributes("Role"),
-                config.Roles);
+                config.Roles ?? Array.Empty<string>());
             return ReturnError(StatusCodes.Status401Unauthorized, "Error. Check permissions.");
         }
 
@@ -629,16 +596,11 @@ public class SSOController : ControllerBase
     /// <returns>A redirect to the SAML provider's auth page.</returns>
     [HttpGet("SAML/p/{provider}")]
     [HttpGet("SAML/start/{provider}")]
-    public RedirectResult SamlChallenge(string provider, [FromQuery] bool isLinking = false)
+    public ActionResult SamlChallenge(string provider, [FromQuery] bool isLinking = false)
     {
-        SamlConfig config;
-        try
+        if (!TryGetSamlConfig(provider, out var config))
         {
-            config = SSOPlugin.Instance.Configuration.SamlConfigs[provider];
-        }
-        catch (KeyNotFoundException)
-        {
-            throw new ArgumentException("Provider does not exist");
+            return BadRequest("No matching provider found");
         }
 
         if (config.Enabled)
@@ -664,7 +626,7 @@ public class SSOController : ControllerBase
             return Redirect(request.GetRedirectUrl(config.SamlEndpoint.Trim(), relayState));
         }
 
-        throw new ArgumentException("Provider does not exist");
+        return BadRequest("No matching provider found");
     }
 
     /// <summary>
@@ -675,8 +637,33 @@ public class SSOController : ControllerBase
     /// <returns>The success result.</returns>
     [Authorize(Policy = Policies.RequiresElevation)]
     [HttpPost("SAML/Add/{provider}")]
-    public OkResult SamlAdd(string provider, [FromBody] SamlConfig newConfig)
+    public ActionResult SamlAdd(string provider, [FromBody] SamlConfig newConfig)
     {
+        if (string.IsNullOrWhiteSpace(provider))
+        {
+            return BadRequest(new ApiError { Code = "InvalidProvider", Message = "Provider name is required." });
+        }
+
+        if (newConfig == null)
+        {
+            return BadRequest(new ApiError { Code = "InvalidConfig", Message = "Configuration body is required." });
+        }
+
+        if (string.IsNullOrWhiteSpace(newConfig.SamlEndpoint))
+        {
+            return BadRequest(new ApiError { Code = "InvalidConfig", Message = "SAML endpoint is required." });
+        }
+
+        if (string.IsNullOrWhiteSpace(newConfig.SamlClientId))
+        {
+            return BadRequest(new ApiError { Code = "InvalidConfig", Message = "SAML client ID is required." });
+        }
+
+        if (string.IsNullOrWhiteSpace(newConfig.SamlCertificate))
+        {
+            return BadRequest(new ApiError { Code = "InvalidConfig", Message = "SAML certificate is required." });
+        }
+
         var configuration = SSOPlugin.Instance.Configuration;
         configuration.SamlConfigs[provider] = newConfig;
         SSOPlugin.Instance.UpdateConfiguration(configuration);
@@ -689,8 +676,8 @@ public class SSOController : ControllerBase
     /// <param name="provider">The ID of the provider to delete.</param>
     /// <returns>The success result.</returns>
     [Authorize(Policy = Policies.RequiresElevation)]
-    [HttpGet("SAML/Del/{provider}")]
-    public OkResult SamlDel(string provider)
+    [HttpDelete("SAML/Del/{provider}")]
+    public ActionResult SamlDel(string provider)
     {
         var configuration = SSOPlugin.Instance.Configuration;
         configuration.SamlConfigs.Remove(provider);
@@ -720,12 +707,7 @@ public class SSOController : ControllerBase
     [Produces(MediaTypeNames.Application.Json)]
     public async Task<ActionResult> SamlAuth(string provider, [FromBody] AuthResponse response)
     {
-        SamlConfig config;
-        try
-        {
-            config = SSOPlugin.Instance.Configuration.SamlConfigs[provider];
-        }
-        catch (KeyNotFoundException)
+        if (!TryGetSamlConfig(provider, out var config))
         {
             return BadRequest("No matching provider found");
         }
@@ -816,6 +798,7 @@ public class SSOController : ControllerBase
             return Ok(authenticationResult);
         }
 
+        _logger.LogWarning("SAML auth failed: provider {Provider} disabled or invalid", provider);
         return Problem("Something went wrong");
     }
 
@@ -833,6 +816,56 @@ public class SSOController : ControllerBase
         user.AuthenticationProviderId = provider;
 
         return Ok();
+    }
+
+    private bool TryGetOidConfig(string provider, out OidConfig config)
+    {
+        return SSOPlugin.Instance.Configuration.OidConfigs.TryGetValue(provider, out config);
+    }
+
+    private bool TryGetSamlConfig(string provider, out SamlConfig config)
+    {
+        return SSOPlugin.Instance.Configuration.SamlConfigs.TryGetValue(provider, out config);
+    }
+
+    private OidcClientOptions BuildOidcOptions(OidConfig config, string redirectUri)
+    {
+        if (string.IsNullOrWhiteSpace(config.OidEndpoint))
+        {
+            throw new ArgumentException("OidEndpoint is required.", nameof(config));
+        }
+
+        var scopes = config.OidScopes ?? Array.Empty<string>();
+        var options = new OidcClientOptions
+        {
+            Authority = config.OidEndpoint?.Trim(),
+            ClientId = config.OidClientId?.Trim(),
+            ClientSecret = config.OidSecret?.Trim(),
+            RedirectUri = redirectUri,
+            Scope = string.Join(" ", scopes.Prepend("openid profile")),
+            DisablePushedAuthorization = config.DisablePushedAuthorization,
+            LoggerFactory = _loggerFactory,
+            LoadProfile = !config.DoNotLoadProfile,
+            HttpClientFactory = _ =>
+            {
+                var client = _httpClientFactory.CreateClient();
+                var assembly = Assembly.GetExecutingAssembly();
+                var fvi = System.Diagnostics.FileVersionInfo.GetVersionInfo(assembly.Location);
+                var version = fvi.FileVersion;
+                client.DefaultRequestHeaders.UserAgent.ParseAdd($"Jellyfin-Plugin-SSO-Auth +{version} (https://github.com/9p4/jellyfin-plugin-sso)");
+                return client;
+            }
+        };
+        var endpoint = config.OidEndpoint?.Trim();
+        if (!string.IsNullOrWhiteSpace(endpoint) && Uri.TryCreate(endpoint, UriKind.Absolute, out var oidEndpointUri))
+        {
+            options.Policy.Discovery.AdditionalEndpointBaseAddresses.Add(oidEndpointUri.GetLeftPart(UriPartial.Authority));
+        }
+
+        options.Policy.Discovery.ValidateEndpoints = !config.DoNotValidateEndpoints;
+        options.Policy.Discovery.RequireHttps = !config.DisableHttps;
+        options.Policy.Discovery.ValidateIssuerName = !config.DoNotValidateIssuerName;
+        return options;
     }
 
     private SerializableDictionary<string, Guid> GetCanonicalLinks(string mode, string provider)
@@ -1063,12 +1096,7 @@ public class SSOController : ControllerBase
     [Produces(MediaTypeNames.Application.Json)]
     private ActionResult SamlLink(string provider, Guid jellyfinUserId, AuthResponse response)
     {
-        SamlConfig config;
-        try
-        {
-            config = SSOPlugin.Instance.Configuration.SamlConfigs[provider];
-        }
-        catch (KeyNotFoundException)
+        if (!TryGetSamlConfig(provider, out var config))
         {
             return BadRequest("No matching provider found");
         }
@@ -1095,17 +1123,12 @@ public class SSOController : ControllerBase
     [Produces(MediaTypeNames.Application.Json)]
     private ActionResult OidLink(string provider, Guid jellyfinUserId, AuthResponse response)
     {
-        OidConfig config;
-        try
-        {
-            config = SSOPlugin.Instance.Configuration.OidConfigs[provider];
-        }
-        catch (KeyNotFoundException)
+        if (!TryGetOidConfig(provider, out var config))
         {
             return BadRequest("No matching provider found");
         }
 
-        foreach (var kvp in StateManager)
+        foreach (var kvp in _stateStore.GetSnapshot())
         {
             if (kvp.Value.State.State.Equals(response.Data) && kvp.Value.Valid)
             {
@@ -1114,19 +1137,44 @@ public class SSOController : ControllerBase
             }
         }
 
+        _logger.LogWarning("OID link failed: no valid state found for provider {Provider}", provider);
         return Problem("Something went wrong!");
     }
 
     private ActionResult CreateCanonicalLink(string mode, string provider, [FromRoute] Guid jellyfinUserId, string providerUserId)
     {
-        SerializableDictionary<string, Guid> links = null;
-        try
+        SerializableDictionary<string, Guid> links;
+        if (string.Equals(mode, "saml", StringComparison.OrdinalIgnoreCase))
         {
-            links = GetCanonicalLinks(mode, provider);
+            if (!TryGetSamlConfig(provider, out var c))
+            {
+                return BadRequest("No matching provider found");
+            }
+
+            links = c.CanonicalLinks;
+            if (links == null)
+            {
+                links = new SerializableDictionary<string, Guid>();
+                c.CanonicalLinks = links;
+            }
         }
-        catch (KeyNotFoundException)
+        else if (string.Equals(mode, "oid", StringComparison.OrdinalIgnoreCase))
         {
-            return BadRequest("No matching provider found");
+            if (!TryGetOidConfig(provider, out var c))
+            {
+                return BadRequest("No matching provider found");
+            }
+
+            links = c.CanonicalLinks;
+            if (links == null)
+            {
+                links = new SerializableDictionary<string, Guid>();
+                c.CanonicalLinks = links;
+            }
+        }
+        else
+        {
+            throw new ArgumentException($"{mode} is not a valid choice between 'saml' and 'oid'");
         }
 
         links[providerUserId] = jellyfinUserId;
@@ -1255,18 +1303,12 @@ public class SSOController : ControllerBase
 
     private void Invalidate()
     {
-        foreach (var kvp in StateManager)
-        {
-            var now = DateTime.Now;
-            if (now.Subtract(kvp.Value.Created).TotalMinutes > 1)
-            {
-                StateManager.Remove(kvp.Key);
-            }
-        }
+        _stateStore.Invalidate();
     }
 
     private string GetRequestBase(string schemeOverride = null, int? portOverride = null)
     {
+        schemeOverride = string.IsNullOrWhiteSpace(schemeOverride) ? null : schemeOverride;
         int requestPort;
 
         if (portOverride != null)
@@ -1305,109 +1347,4 @@ public class SSOController : ControllerBase
         errorResult.StatusCode = code;
         return errorResult;
     }
-}
-
-/// <summary>
-/// The data the client should pass back to the API.
-/// </summary>
-public class AuthResponse
-{
-    /// <summary>
-    /// Gets or sets the device ID of the client.
-    /// </summary>
-    public string DeviceID { get; set; }
-
-    /// <summary>
-    /// Gets or sets the device name of the client.
-    /// </summary>
-    public string DeviceName { get; set; }
-
-    /// <summary>
-    /// Gets or sets the app name of the client.
-    /// </summary>
-    public string AppName { get; set; }
-
-    /// <summary>
-    /// Gets or sets the app version of the client.
-    /// </summary>
-    public string AppVersion { get; set; }
-
-    /// <summary>
-    /// Gets or sets the auth data of the client (for authorizing the response).
-    /// </summary>
-    public string Data { get; set; }
-}
-
-/// <summary>
-/// A manager for OpenID to manage the state of the clients.
-/// </summary>
-public class TimedAuthorizeState
-{
-    /// <summary>
-    /// Initializes a new instance of the <see cref="TimedAuthorizeState"/> class.
-    /// </summary>
-    /// <param name="state">The AuthorizeState to time.</param>
-    /// <param name="created">When this state was created.</param>
-    public TimedAuthorizeState(AuthorizeState state, DateTime created)
-    {
-        State = state;
-        Created = created;
-        Valid = false;
-        Admin = false;
-        IsLinking = false;
-        EnableLiveTv = false;
-        EnableLiveTvManagement = false;
-        AvatarURL = null;
-    }
-
-    /// <summary>
-    /// Gets or sets the Authorization State of the client.
-    /// </summary>
-    public AuthorizeState State { get; set; }
-
-    /// <summary>
-    /// Gets or sets when this object was created to time it out.
-    /// </summary>
-    public DateTime Created { get; set; }
-
-    /// <summary>
-    /// Gets or sets a value indicating whether the user is valid.
-    /// </summary>
-    public bool Valid { get; set; }
-
-    /// <summary>
-    /// Gets or sets the user tied to the state.
-    /// </summary>
-    public string Username { get; set; }
-
-    /// <summary>
-    /// Gets or sets a value indicating whether the user is an administrator.
-    /// </summary>
-    public bool Admin { get; set; }
-
-    /// <summary>
-    /// Gets or sets a value indicating whether the state is
-    /// tied to a linking flow (instead of a login flow).
-    /// </summary>
-    public bool IsLinking { get; set; }
-
-    /// <summary>
-    /// Gets or sets the folders the user is allowed access to.
-    /// </summary>
-    public List<string> Folders { get; set; }
-
-    /// <summary>
-    /// Gets or sets a value indicating whether the user is allowed to view live TV.
-    /// </summary>
-    public bool EnableLiveTv { get; set; }
-
-    /// <summary>
-    /// Gets or sets a value indicating whether the user is allowed to manage live TV.
-    /// </summary>
-    public bool EnableLiveTvManagement { get; set; }
-
-    /// <summary>
-    /// Gets or sets the user avatar url.
-    /// </summary>
-    public string AvatarURL { get; set; }
 }

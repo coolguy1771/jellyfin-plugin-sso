@@ -24,6 +24,7 @@ public sealed class AuthModelsTests
         timed.EnableLiveTv.Should().BeFalse();
         timed.EnableLiveTvManagement.Should().BeFalse();
         timed.AvatarURL.Should().BeNull();
+        timed.Folders.Should().NotBeNull().And.BeEmpty();
     }
 
     [Fact]

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using FluentAssertions;
 using Jellyfin.Plugin.SSO_Auth.Tests.Fixtures;
 using Xunit;
@@ -21,6 +22,8 @@ public sealed class SSOControllerTests : IClassFixture<TestWebApplicationFactory
         response.IsSuccessStatusCode.Should().BeTrue();
         var content = await response.Content.ReadAsStringAsync();
         content.Should().NotBeNull();
+        var names = JsonSerializer.Deserialize<string[]>(content);
+        names.Should().NotBeNull().And.BeAssignableTo<string[]>();
     }
 
     [Fact]
@@ -31,5 +34,7 @@ public sealed class SSOControllerTests : IClassFixture<TestWebApplicationFactory
         response.IsSuccessStatusCode.Should().BeTrue();
         var content = await response.Content.ReadAsStringAsync();
         content.Should().NotBeNull();
+        var names = JsonSerializer.Deserialize<string[]>(content);
+        names.Should().NotBeNull().And.BeAssignableTo<string[]>();
     }
 }

@@ -19,7 +19,16 @@ async function link(request) {
 
     if (jfCredentialsString == null) return;
 
-    const jfCredentials = JSON.parse(jfCredentialsString);
+    var jfCredentials;
+    try {
+        jfCredentials = JSON.parse(jfCredentialsString);
+    } catch (_) {
+        return;
+    }
+    if (typeof jfCredentials !== 'object' || jfCredentials == null ||
+        !Array.isArray(jfCredentials['Servers']) || jfCredentials['Servers'].length === 0) {
+        return;
+    }
     const jfUser = jfCredentials['Servers'][0]['UserId'];
     const jfToken = jfCredentials['Servers'][0]['AccessToken'];
 
@@ -27,23 +36,18 @@ async function link(request) {
     if (jfToken == null) return;
 
     const url = '{{LINK_URL_PREFIX}}' + jfUser;
-
-    return new Promise(resolve => {
-       var xhr = new XMLHttpRequest();
-       xhr.open('POST', url, true);
-       xhr.setRequestHeader('Content-Type', 'application/json');
-       xhr.setRequestHeader('Accept', 'application/json');
-       xhr.setRequestHeader(
-           'X-Emby-Authorization',
-           "MediaBrowser Client=\"" + request.appName + "\",Device=\"" + request.deviceName + "\",DeviceId=\"" + request.deviceId + "\",Version=\"" + request.appVersion + "\",Token=\"" + jfToken + "\"");
-       xhr.onload = function(e) {
-         resolve(xhr.response);
-       };
-       xhr.onerror = function (e) {
-         resolve(undefined);
-       };
-       xhr.send(JSON.stringify(request));
-    });
+    const headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-Emby-Authorization': 'MediaBrowser Client="' + request.appName + '",Device="' + request.deviceName + '",DeviceId="' + request.deviceId + '",Version="' + request.appVersion + '",Token="' + jfToken + '"'
+    };
+    try {
+        var res = await fetch(url, { method: 'POST', headers: headers, body: JSON.stringify(request) });
+        if (!res.ok) return undefined;
+        return await res.text();
+    } catch (_) {
+        return undefined;
+    }
 }
 
 async function main() {
@@ -72,24 +76,48 @@ async function main() {
 
     var url = '{{AUTH_URL}}';
 
-    let response = await new Promise(resolve => {
-       var xhr = new XMLHttpRequest();
-       xhr.open('POST', url, true);
-       xhr.setRequestHeader('Content-Type', 'application/json');
-       xhr.setRequestHeader('Accept', 'application/json');
-       xhr.onload = function(e) {
-         resolve(xhr.response);
-       };
-       xhr.onerror = function () {
-         resolve(undefined);
-       };
-       xhr.send(JSON.stringify(request));
-    });
-    var responseJson = JSON.parse(response);
+    var response;
+    try {
+        var res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify(request)
+        });
+        if (!res.ok) { showLoginError(); return; }
+        response = await res.text();
+    } catch (_) {
+        showLoginError();
+        return;
+    }
+    if (typeof response !== 'string' || response.length === 0) {
+        showLoginError();
+        return;
+    }
+    var responseJson;
+    try {
+        responseJson = JSON.parse(response);
+    } catch (_) {
+        showLoginError();
+        return;
+    }
+    if (responseJson == null || responseJson['User'] == null ||
+        responseJson['User']['Id'] == null || responseJson['User']['ServerId'] == null) {
+        showLoginError();
+        return;
+    }
     var userId = 'user-' + responseJson['User']['Id'] + '-' + responseJson['User']['ServerId'];
     responseJson['User']['EnableAutoLogin'] = true;
     localStorage.setItem(userId, JSON.stringify(responseJson['User']));
-    var jfCreds = JSON.parse(localStorage.getItem('jellyfin_credentials'));
+    var jfCredsRaw = localStorage.getItem('jellyfin_credentials');
+    try {
+        var jfCreds = jfCredsRaw != null ? JSON.parse(jfCredsRaw) : {};
+    } catch (_) {
+        jfCreds = {};
+    }
+    if (typeof jfCreds !== 'object' || jfCreds == null) jfCreds = {};
+    if (!Array.isArray(jfCreds['Servers']) || jfCreds['Servers'].length === 0) {
+        jfCreds['Servers'] = [{}];
+    }
     jfCreds['Servers'][0]['AccessToken'] = responseJson['AccessToken'];
     jfCreds['Servers'][0]['UserId'] = responseJson['User']['Id'];
     localStorage.setItem('jellyfin_credentials', JSON.stringify(jfCreds));

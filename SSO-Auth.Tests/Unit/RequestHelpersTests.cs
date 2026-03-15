@@ -17,7 +17,7 @@ namespace Jellyfin.Plugin.SSO_Auth.Tests.Unit;
 public sealed class RequestHelpersTests
 {
     [Fact]
-    public void AssertCanUpdateUser_IsCallable()
+    public async Task AssertCanUpdateUser_IsCallable()
     {
         var authContext = new Mock<IAuthorizationContext>();
         var request = new Mock<HttpRequest>();
@@ -32,7 +32,7 @@ public sealed class RequestHelpersTests
             Guid.NewGuid(),
             false);
 
-        act.Should().ThrowAsync<InvalidOperationException>()
+        await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("mock not configured");
     }
 }

@@ -24,7 +24,13 @@ public sealed class OidStateStore : IOidStateStore
     {
         lock (_lock)
         {
-            return _states.TryGetValue(state, out timedState);
+            if (_states.TryGetValue(state, out timedState))
+            {
+                _states.Remove(state);
+                return true;
+            }
+
+            return false;
         }
     }
 
@@ -51,7 +57,7 @@ public sealed class OidStateStore : IOidStateStore
     {
         lock (_lock)
         {
-            var now = DateTime.Now;
+            var now = DateTime.UtcNow;
             var toRemove = _states
                 .Where(kvp => now.Subtract(kvp.Value.Created) > Expiration)
                 .Select(kvp => kvp.Key)

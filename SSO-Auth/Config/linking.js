@@ -174,8 +174,10 @@ const ssoConfigLinking = {
         } else {
           window.alert(msg);
         }
+        setTimeout(() => window.location.reload(), 500);
+      } else {
+        window.location.reload();
       }
-      window.location.reload();
     });
   },
 };

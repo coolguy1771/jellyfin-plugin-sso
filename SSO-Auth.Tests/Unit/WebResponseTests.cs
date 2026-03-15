@@ -23,8 +23,8 @@ public sealed class WebResponseTests
     {
         var html = WebResponse.Generator("d", "myprov", "https://host.example", "SAML", false);
 
-        html.Should().Contain("/sso/SAML/Auth/myprov");
-        html.Should().Contain("/sso/SAML/Link/myprov/");
+        html.Should().Contain("sso\\/SAML\\/Auth\\/myprov", "auth URL path is embedded (escaped for JS)");
+        html.Should().Contain("sso\\/SAML\\/Link\\/myprov\\/", "link URL path is embedded (escaped for JS)");
     }
 
     [Theory]
@@ -34,7 +34,7 @@ public sealed class WebResponseTests
     {
         var html = WebResponse.Generator("x", "p", "https://h.example", "OID", isLinking);
 
-        html.Should().Contain(expected);
+        html.Should().Contain("if (" + expected + ") await link(request)", "IS_LINKING is injected into the callback script conditional");
     }
 
     [Fact]
@@ -61,6 +61,6 @@ public sealed class WebResponseTests
         var baseUrl = "https://jellyfin.test";
         var html = WebResponse.Generator("data", "prov", baseUrl, "OID", false);
 
-        html.Should().Contain("https://jellyfin.test");
+        html.Should().Contain("jellyfin.test", "base URL is embedded (slashes may be escaped for JS)");
     }
 }

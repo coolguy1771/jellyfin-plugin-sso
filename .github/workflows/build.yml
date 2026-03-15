@@ -25,7 +25,10 @@ jobs:
           dotnet-version: "${{ inputs.dotnet-version }}"
 
       - name: Restore, build solution and run tests
-        run: dotnet restore SSO-Auth.sln && dotnet build SSO-Auth.sln -c Release --no-restore && dotnet test SSO-Auth.sln -c Release --no-build --verbosity normal
+        run: |
+          dotnet restore SSO-Auth.sln
+          dotnet build SSO-Auth.sln -c Release --no-restore
+          dotnet test SSO-Auth.sln -c Release --no-build --verbosity normal
 
       - name: Build Jellyfin Plugin
         uses: oddstr13/jellyfin-plugin-repository-manager@9497a0a499416cc572ed2e07a391d9f943a37b4d # v1.1.1

@@ -55,6 +55,7 @@ public class TimedAuthorizeState
         EnableLiveTv = false;
         EnableLiveTvManagement = false;
         AvatarURL = null;
+        Folders = new List<string>();
     }
 
     /// <summary>

@@ -85,10 +85,10 @@ public sealed class OidStateStoreTests
         var store = new OidStateStore();
         var expired = new TimedAuthorizeState(
             new AuthorizeState(),
-            DateTime.Now.AddMinutes(-5));
+            DateTime.UtcNow.AddMinutes(-5));
         var valid = new TimedAuthorizeState(
             new AuthorizeState(),
-            DateTime.Now);
+            DateTime.UtcNow);
         store.Add("expired", expired);
         store.Add("valid", valid);
 

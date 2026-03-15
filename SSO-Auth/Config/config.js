@@ -4,14 +4,18 @@ const ssoConfigurationPage = {
     ApiClient.getPluginConfiguration(ssoConfigurationPage.pluginUniqueId).then(
       (config) => {
         ssoConfigurationPage.populateProviders(page, config.OidConfigs);
-        ssoConfigurationPage.populateSamlProviders(page, config.SamlConfigs || {});
+        ssoConfigurationPage.populateSamlProviders(
+          page,
+          config.SamlConfigs || {},
+        );
       },
     );
 
     const folder_container = page.querySelector("#EnabledFolders");
     ssoConfigurationPage.populateFolders(folder_container);
     const saml_folder_container = page.querySelector("#SamlEnabledFolders");
-    if (saml_folder_container) ssoConfigurationPage.populateFolders(saml_folder_container);
+    if (saml_folder_container)
+      ssoConfigurationPage.populateFolders(saml_folder_container);
   },
   populateSamlProviders: (page, samlConfigs) => {
     const sel = page.querySelector("#selectSamlProvider");
@@ -297,22 +301,52 @@ const ssoConfigurationPage = {
           const el = page.querySelector("#" + formId);
           if (!el) return;
           const val = provider[configKey];
-          if (configKey === "PortOverride" || configKey === "SchemeOverride" || configKey === "SamlEndpoint" || configKey === "SamlClientId" || configKey === "SamlCertificate" || configKey === "DefaultProvider") {
+          if (
+            configKey === "PortOverride" ||
+            configKey === "SchemeOverride" ||
+            configKey === "SamlEndpoint" ||
+            configKey === "SamlClientId" ||
+            configKey === "SamlCertificate" ||
+            configKey === "DefaultProvider"
+          ) {
             el.value = val != null ? String(val) : "";
-          } else if (configKey === "Roles" || configKey === "AdminRoles" || configKey === "LiveTvRoles" || configKey === "LiveTvManagementRoles") {
-            ssoConfigurationPage.fillTextList(Array.isArray(val) ? val : [], el);
-          } else if (configKey === "Enabled" || configKey === "EnableAuthorization" || configKey === "EnableAllFolders" || configKey === "EnableFolderRoles" || configKey === "EnableLiveTvRoles" || configKey === "EnableLiveTv" || configKey === "EnableLiveTvManagement" || configKey === "NewPath") {
+          } else if (
+            configKey === "Roles" ||
+            configKey === "AdminRoles" ||
+            configKey === "LiveTvRoles" ||
+            configKey === "LiveTvManagementRoles"
+          ) {
+            ssoConfigurationPage.fillTextList(
+              Array.isArray(val) ? val : [],
+              el,
+            );
+          } else if (
+            configKey === "Enabled" ||
+            configKey === "EnableAuthorization" ||
+            configKey === "EnableAllFolders" ||
+            configKey === "EnableFolderRoles" ||
+            configKey === "EnableLiveTvRoles" ||
+            configKey === "EnableLiveTv" ||
+            configKey === "EnableLiveTvManagement" ||
+            configKey === "NewPath"
+          ) {
             el.checked = !!val;
           }
         });
 
         const foldersEl = page.querySelector("#SamlEnabledFolders");
         if (foldersEl && provider.EnabledFolders) {
-          ssoConfigurationPage.populateEnabledFolders(provider.EnabledFolders, foldersEl);
+          ssoConfigurationPage.populateEnabledFolders(
+            provider.EnabledFolders,
+            foldersEl,
+          );
         }
         const roleMapEl = page.querySelector("#SamlFolderRoleMapping");
         if (roleMapEl && provider.FolderRoleMapping) {
-          ssoConfigurationPage.populateRoleMappings(provider.FolderRoleMapping, roleMapEl);
+          ssoConfigurationPage.populateRoleMappings(
+            provider.FolderRoleMapping,
+            roleMapEl,
+          );
         } else if (roleMapEl) {
           ssoConfigurationPage.populateRoleMappings([], roleMapEl);
         }
@@ -321,74 +355,115 @@ const ssoConfigurationPage = {
   },
   saveSamlProvider: (page, provider_name) => {
     return new Promise((resolve) => {
-      ApiClient.getPluginConfiguration(ssoConfigurationPage.pluginUniqueId).then(
-        (config) => {
-          if (!config.SamlConfigs) config.SamlConfigs = {};
-          const current_config = {};
-          const map = ssoConfigurationPage.samlFormFieldMap;
+      ApiClient.getPluginConfiguration(
+        ssoConfigurationPage.pluginUniqueId,
+      ).then((config) => {
+        if (!config.SamlConfigs) config.SamlConfigs = {};
+        const current_config = {};
+        const map = ssoConfigurationPage.samlFormFieldMap;
 
-          Object.keys(map).forEach((configKey) => {
-            const formId = map[configKey];
-            const el = page.querySelector("#" + formId);
-            if (!el) return;
-            if (configKey === "PortOverride") {
-              const raw = (el.value || "").trim();
-              const num = raw === "" ? null : parseInt(raw, 10);
-              current_config[configKey] = num !== null && !isNaN(num) ? num : null;
-            } else if (configKey === "SamlEndpoint" || configKey === "SamlClientId" || configKey === "SamlCertificate" || configKey === "SchemeOverride" || configKey === "DefaultProvider") {
-              current_config[configKey] = (el.value || "").trim() || null;
-            } else if (configKey === "Roles" || configKey === "AdminRoles" || configKey === "LiveTvRoles" || configKey === "LiveTvManagementRoles") {
-              current_config[configKey] = ssoConfigurationPage.parseTextList(el);
-            } else if (configKey === "Enabled" || configKey === "EnableAuthorization" || configKey === "EnableAllFolders" || configKey === "EnableFolderRoles" || configKey === "EnableLiveTvRoles" || configKey === "EnableLiveTv" || configKey === "EnableLiveTvManagement" || configKey === "NewPath") {
-              current_config[configKey] = !!el.checked;
-            }
-          });
+        Object.keys(map).forEach((configKey) => {
+          const formId = map[configKey];
+          const el = page.querySelector("#" + formId);
+          if (!el) return;
+          if (configKey === "PortOverride") {
+            const raw = (el.value || "").trim();
+            const num = raw === "" ? null : parseInt(raw, 10);
+            current_config[configKey] =
+              num !== null && !isNaN(num) ? num : null;
+          } else if (
+            configKey === "SamlEndpoint" ||
+            configKey === "SamlClientId" ||
+            configKey === "SamlCertificate" ||
+            configKey === "SchemeOverride" ||
+            configKey === "DefaultProvider"
+          ) {
+            current_config[configKey] = (el.value || "").trim() || null;
+          } else if (
+            configKey === "Roles" ||
+            configKey === "AdminRoles" ||
+            configKey === "LiveTvRoles" ||
+            configKey === "LiveTvManagementRoles"
+          ) {
+            current_config[configKey] = ssoConfigurationPage.parseTextList(el);
+          } else if (
+            configKey === "Enabled" ||
+            configKey === "EnableAuthorization" ||
+            configKey === "EnableAllFolders" ||
+            configKey === "EnableFolderRoles" ||
+            configKey === "EnableLiveTvRoles" ||
+            configKey === "EnableLiveTv" ||
+            configKey === "EnableLiveTvManagement" ||
+            configKey === "NewPath"
+          ) {
+            current_config[configKey] = !!el.checked;
+          }
+        });
 
-          const foldersEl = page.querySelector("#SamlEnabledFolders");
-          current_config.EnabledFolders = foldersEl ? ssoConfigurationPage.serializeEnabledFolders(foldersEl) : [];
-          const roleMapEl = page.querySelector("#SamlFolderRoleMapping");
-          current_config.FolderRoleMapping = roleMapEl ? ssoConfigurationPage.serializeRoleMappings(roleMapEl) : [];
+        const foldersEl = page.querySelector("#SamlEnabledFolders");
+        current_config.EnabledFolders = foldersEl
+          ? ssoConfigurationPage.serializeEnabledFolders(foldersEl)
+          : [];
+        const roleMapEl = page.querySelector("#SamlFolderRoleMapping");
+        current_config.FolderRoleMapping = roleMapEl
+          ? ssoConfigurationPage.serializeRoleMappings(roleMapEl)
+          : [];
 
-          config.SamlConfigs[provider_name] = current_config;
-          ApiClient.updatePluginConfiguration(ssoConfigurationPage.pluginUniqueId, config).then(function (result) {
-            Dashboard.processPluginConfigurationUpdateResult(result);
-            ssoConfigurationPage.loadConfiguration(page);
-            ssoConfigurationPage.loadSamlProvider(page, provider_name);
-            const sel = page.querySelector("#selectSamlProvider");
-            if (sel) sel.value = provider_name;
-            if (typeof Dashboard !== "undefined" && Dashboard.alert) {
-              Dashboard.alert("Settings saved.");
-            } else {
-              window.alert("Settings saved.");
-            }
-            resolve();
-          });
-        },
-      );
+        config.SamlConfigs[provider_name] = current_config;
+        ApiClient.updatePluginConfiguration(
+          ssoConfigurationPage.pluginUniqueId,
+          config,
+        ).then(function (result) {
+          Dashboard.processPluginConfigurationUpdateResult(result);
+          ssoConfigurationPage.loadConfiguration(page);
+          ssoConfigurationPage.loadSamlProvider(page, provider_name);
+          const sel = page.querySelector("#selectSamlProvider");
+          if (sel) sel.value = provider_name;
+          if (typeof Dashboard !== "undefined" && Dashboard.alert) {
+            Dashboard.alert("Settings saved.");
+          } else {
+            window.alert("Settings saved.");
+          }
+          resolve();
+        });
+      });
     });
   },
   deleteSamlProvider: (page, provider_name) => {
-    if (!window.confirm("Are you sure you want to delete the SAML provider " + provider_name + "?")) return;
+    if (
+      !window.confirm(
+        "Are you sure you want to delete the SAML provider " +
+          provider_name +
+          "?",
+      )
+    )
+      return;
     return new Promise((resolve) => {
-      ApiClient.getPluginConfiguration(ssoConfigurationPage.pluginUniqueId).then(
-        (config) => {
-          if (!config.SamlConfigs || !config.SamlConfigs.hasOwnProperty(provider_name)) {
-            resolve();
-            return;
+      ApiClient.getPluginConfiguration(
+        ssoConfigurationPage.pluginUniqueId,
+      ).then((config) => {
+        if (
+          !config.SamlConfigs ||
+          !config.SamlConfigs.hasOwnProperty(provider_name)
+        ) {
+          resolve();
+          return;
+        }
+        delete config.SamlConfigs[provider_name];
+        ApiClient.updatePluginConfiguration(
+          ssoConfigurationPage.pluginUniqueId,
+          config,
+        ).then(function (result) {
+          Dashboard.processPluginConfigurationUpdateResult(result);
+          ssoConfigurationPage.loadConfiguration(page);
+          if (typeof Dashboard !== "undefined" && Dashboard.alert) {
+            Dashboard.alert("Provider removed");
+          } else {
+            window.alert("Provider removed");
           }
-          delete config.SamlConfigs[provider_name];
-          ApiClient.updatePluginConfiguration(ssoConfigurationPage.pluginUniqueId, config).then(function (result) {
-            Dashboard.processPluginConfigurationUpdateResult(result);
-            ssoConfigurationPage.loadConfiguration(page);
-            if (typeof Dashboard !== "undefined" && Dashboard.alert) {
-              Dashboard.alert("Provider removed");
-            } else {
-              window.alert("Provider removed");
-            }
-            resolve();
-          });
-        },
-      );
+          resolve();
+        });
+      });
     });
   },
   deleteProvider: (page, provider_name) => {

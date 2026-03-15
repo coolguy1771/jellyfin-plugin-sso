@@ -77,8 +77,13 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
                     .Returns((Type _, string _) => new PluginConfiguration());
 
                 var plugin = new SSOPlugin(paths.Object, serializer.Object);
-                typeof(SSOPlugin).GetProperty("Instance", BindingFlags.Public | BindingFlags.Static)!
-                    .SetValue(null, plugin);
+                var instanceProp = typeof(SSOPlugin).GetProperty("Instance", BindingFlags.Public | BindingFlags.Static);
+                if (instanceProp == null || !instanceProp.CanWrite)
+                {
+                    throw new InvalidOperationException(
+                        "SSOPlugin.Instance property not found or not writable; test setup depends on it.");
+                }
+                instanceProp.SetValue(null, plugin);
 
                 next(app);
             };

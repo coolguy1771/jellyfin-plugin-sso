@@ -48,6 +48,15 @@ public static class WebResponse
                 case '\t':
                     sb.Append("\\t");
                     break;
+                case '/':
+                    sb.Append("\\/");
+                    break;
+                case '\u2028':
+                    sb.Append("\\u2028");
+                    break;
+                case '\u2029':
+                    sb.Append("\\u2029");
+                    break;
                 default:
                     sb.Append(c);
                     break;

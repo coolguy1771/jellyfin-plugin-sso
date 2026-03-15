@@ -362,7 +362,7 @@ public class SSOController : ControllerBase
                 return ReturnError(StatusCodes.Status400BadRequest, $"Error preparing login: {state.Error} - {state.ErrorDescription}");
             }
 
-            var timedState = new TimedAuthorizeState(state, DateTime.Now) { IsLinking = isLinking };
+            var timedState = new TimedAuthorizeState(state, DateTime.UtcNow) { IsLinking = isLinking };
             _stateStore.Add(state.State, timedState);
             return Redirect(state.StartUrl);
         }
@@ -674,7 +674,7 @@ public class SSOController : ControllerBase
     /// <returns>The success result.</returns>
     [Authorize(Policy = Policies.RequiresElevation)]
     [HttpGet("SAML/Del/{provider}")]
-    public OkResult SamlDel(string provider)
+    public ActionResult SamlDel(string provider)
     {
         var configuration = SSOPlugin.Instance.Configuration;
         configuration.SamlConfigs.Remove(provider);
@@ -848,8 +848,12 @@ public class SSOController : ControllerBase
                 return client;
             }
         };
-        var oidEndpointUri = new Uri(config.OidEndpoint?.Trim());
-        options.Policy.Discovery.AdditionalEndpointBaseAddresses.Add(oidEndpointUri.GetLeftPart(UriPartial.Authority));
+        var endpoint = config.OidEndpoint?.Trim();
+        if (!string.IsNullOrWhiteSpace(endpoint) && Uri.TryCreate(endpoint, UriKind.Absolute, out var oidEndpointUri))
+        {
+            options.Policy.Discovery.AdditionalEndpointBaseAddresses.Add(oidEndpointUri.GetLeftPart(UriPartial.Authority));
+        }
+
         options.Policy.Discovery.ValidateEndpoints = !config.DoNotValidateEndpoints;
         options.Policy.Discovery.RequireHttps = !config.DisableHttps;
         options.Policy.Discovery.ValidateIssuerName = !config.DoNotValidateIssuerName;

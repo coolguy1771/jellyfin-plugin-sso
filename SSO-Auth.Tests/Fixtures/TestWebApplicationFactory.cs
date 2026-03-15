@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Reflection;
 using Jellyfin.Plugin.SSO_Auth;
 using Jellyfin.Plugin.SSO_Auth.Config;
@@ -23,6 +24,8 @@ namespace Jellyfin.Plugin.SSO_Auth.Tests.Fixtures;
 
 public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
 {
+    private static readonly ConcurrentBag<string> TempDirs = new();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.ConfigureServices(services =>
@@ -48,9 +51,7 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
 
     private static ILogger<T> CreateMockLogger<T>()
     {
-        var factory = new Mock<ILoggerFactory>();
         var logger = new Mock<ILogger<T>>();
-        factory.Setup(f => f.CreateLogger(It.IsAny<string>())).Returns(logger.Object);
         return logger.Object;
     }
 
@@ -62,15 +63,48 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
         return factory.Object;
     }
 
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            foreach (var dir in TempDirs)
+            {
+                try
+                {
+                    if (Directory.Exists(dir))
+                    {
+                        Directory.Delete(dir, recursive: true);
+                    }
+                }
+                catch
+                {
+                    // ignore cleanup errors
+                }
+            }
+
+            TempDirs.Clear();
+        }
+
+        base.Dispose(disposing);
+    }
+
     private sealed class SetSSOPluginInstanceStartupFilter : IStartupFilter
     {
         public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)
         {
             return app =>
             {
+                var suffix = Guid.NewGuid().ToString("N");
+                var pluginsPath = Path.Combine(Path.GetTempPath(), "jellyfin-sso-test-" + suffix);
+                var configPath = Path.Combine(Path.GetTempPath(), "jellyfin-sso-test-config-" + suffix);
+                Directory.CreateDirectory(pluginsPath);
+                Directory.CreateDirectory(configPath);
+                TempDirs.Add(pluginsPath);
+                TempDirs.Add(configPath);
+
                 var paths = new Mock<IApplicationPaths>();
-                paths.Setup(p => p.PluginsPath).Returns(Path.Combine(Path.GetTempPath(), "jellyfin-sso-test"));
-                paths.Setup(p => p.PluginConfigurationsPath).Returns(Path.Combine(Path.GetTempPath(), "jellyfin-sso-test-config"));
+                paths.Setup(p => p.PluginsPath).Returns(pluginsPath);
+                paths.Setup(p => p.PluginConfigurationsPath).Returns(configPath);
 
                 var serializer = new Mock<IXmlSerializer>();
                 serializer.Setup(s => s.DeserializeFromFile(It.IsAny<Type>(), It.IsAny<string>()))

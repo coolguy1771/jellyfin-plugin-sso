@@ -120,7 +120,8 @@ public class SSOController : ControllerBase
                 return BadRequest("Invalid or expired state");
             }
 
-            var redirectUri = GetRequestBase(config.SchemeOverride, config.PortOverride) + $"/sso/OID/{(Request.Path.Value.Contains("/start/", StringComparison.InvariantCultureIgnoreCase) ? "redirect" : "r")}/" + provider;
+            var pathSegment = Request.Path.Value?.Contains("/OID/redirect", StringComparison.InvariantCultureIgnoreCase) == true ? "redirect" : "r";
+            var redirectUri = GetRequestBase(config.SchemeOverride, config.PortOverride) + $"/sso/OID/{pathSegment}/" + provider;
             var options = BuildOidcOptions(config, redirectUri);
             var oidcClient = new OidcClient(options);
             var currentState = timedState.State;
@@ -348,11 +349,12 @@ public class SSOController : ControllerBase
             bool newPath = config.NewPath;
             if (!isLinking)
             {
-                newPath = Request.Path.Value.Contains("/start/", StringComparison.InvariantCultureIgnoreCase);
+                newPath = Request.Path.Value?.Contains("/OID/redirect", StringComparison.InvariantCultureIgnoreCase) == true;
                 config.NewPath = newPath;
             }
 
-            string redirectUri = GetRequestBase(config.SchemeOverride, config.PortOverride) + $"/sso/OID/{(newPath ? "redirect" : "r")}/" + provider;
+            var pathSegment = newPath ? "redirect" : "r";
+            string redirectUri = GetRequestBase(config.SchemeOverride, config.PortOverride) + $"/sso/OID/{pathSegment}/" + provider;
             var options = BuildOidcOptions(config, redirectUri);
             var oidcClient = new OidcClient(options);
             var state = await oidcClient.PrepareLoginAsync().ConfigureAwait(false);
@@ -395,7 +397,8 @@ public class SSOController : ControllerBase
             return BadRequest(new ApiError { Code = "InvalidConfig", Message = "OpenID endpoint is required." });
         }
 
-        if (!Uri.TryCreate(config.OidEndpoint.Trim(), UriKind.Absolute, out var endpointUri) || !endpointUri.Scheme.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+        if (!Uri.TryCreate(config.OidEndpoint.Trim(), UriKind.Absolute, out var endpointUri)
+            || !(string.Equals(endpointUri.Scheme, "http", StringComparison.OrdinalIgnoreCase) || string.Equals(endpointUri.Scheme, "https", StringComparison.OrdinalIgnoreCase)))
         {
             return BadRequest(new ApiError { Code = "InvalidConfig", Message = "OpenID endpoint must be a valid HTTP or HTTPS URL." });
         }
@@ -417,7 +420,7 @@ public class SSOController : ControllerBase
     /// <param name="provider">Name of provider to delete.</param>
     /// <returns>Ok on success.</returns>
     [Authorize(Policy = Policies.RequiresElevation)]
-    [HttpGet("OID/Del/{provider}")]
+    [HttpDelete("OID/Del/{provider}")]
     public ActionResult OidDel(string provider)
     {
         var configuration = SSOPlugin.Instance.Configuration;
@@ -673,7 +676,7 @@ public class SSOController : ControllerBase
     /// <param name="provider">The ID of the provider to delete.</param>
     /// <returns>The success result.</returns>
     [Authorize(Policy = Policies.RequiresElevation)]
-    [HttpGet("SAML/Del/{provider}")]
+    [HttpDelete("SAML/Del/{provider}")]
     public ActionResult SamlDel(string provider)
     {
         var configuration = SSOPlugin.Instance.Configuration;
@@ -827,6 +830,11 @@ public class SSOController : ControllerBase
 
     private OidcClientOptions BuildOidcOptions(OidConfig config, string redirectUri)
     {
+        if (string.IsNullOrWhiteSpace(config.OidEndpoint))
+        {
+            throw new ArgumentException("OidEndpoint is required.", nameof(config));
+        }
+
         var scopes = config.OidScopes ?? Array.Empty<string>();
         var options = new OidcClientOptions
         {

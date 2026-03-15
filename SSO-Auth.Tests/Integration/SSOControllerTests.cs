@@ -20,6 +20,7 @@ public sealed class SSOControllerTests : IClassFixture<TestWebApplicationFactory
         var response = await _client.GetAsync("/SSO/OID/GetNames");
 
         response.IsSuccessStatusCode.Should().BeTrue();
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
         var content = await response.Content.ReadAsStringAsync();
         content.Should().NotBeNull();
         var names = JsonSerializer.Deserialize<string[]>(content);
@@ -32,6 +33,7 @@ public sealed class SSOControllerTests : IClassFixture<TestWebApplicationFactory
         var response = await _client.GetAsync("/SSO/SAML/GetNames");
 
         response.IsSuccessStatusCode.Should().BeTrue();
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
         var content = await response.Content.ReadAsStringAsync();
         content.Should().NotBeNull();
         var names = JsonSerializer.Deserialize<string[]>(content);

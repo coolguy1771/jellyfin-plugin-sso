@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Reflection;
@@ -95,27 +96,28 @@ public static class WebResponse
             throw new ArgumentException("Base URL is required.", nameof(baseUrl));
         }
 
-        var protocolSeparatorIndex = baseUrl.IndexOf("//", StringComparison.Ordinal);
-        if (protocolSeparatorIndex < 0)
+        if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var baseUri) || !baseUri.IsAbsoluteUri || string.IsNullOrEmpty(baseUri.Host))
         {
-            throw new ArgumentException("Base URL must contain '//' (e.g. https://host).", nameof(baseUrl));
+            throw new ArgumentException("Base URL must be a valid absolute URI (e.g. https://host).", nameof(baseUrl));
         }
 
         var idnMapping = new IdnMapping();
-        var protocol = baseUrl.Substring(0, protocolSeparatorIndex + 2);
-        var domain = baseUrl.Substring(protocolSeparatorIndex + 2);
-        var punycodeDomain = idnMapping.GetAscii(domain);
-        var punycodeBaseUrl = protocol + punycodeDomain;
+        var punycodeHost = idnMapping.GetAscii(baseUri.Host);
+        var builder = new UriBuilder(baseUri) { Host = punycodeHost };
+        var punycodeBaseUrl = builder.Uri.GetLeftPart(UriPartial.Authority);
 
         var authUrl = punycodeBaseUrl + "/sso/" + mode + "/Auth/" + provider;
         var linkUrlPrefix = punycodeBaseUrl + "/sso/" + mode + "/Link/" + provider + "/";
+
+        var appVersion = FileVersionInfo.GetVersionInfo(Assembly.GetExecutingAssembly().Location).FileVersion ?? "0.0.0";
 
         var payload = PayloadTemplate.Value
             .Replace("{{BASE_URL}}", EscapeForJsString(punycodeBaseUrl))
             .Replace("{{DATA}}", EscapeForJsString(data))
             .Replace("{{AUTH_URL}}", EscapeForJsString(authUrl))
             .Replace("{{LINK_URL_PREFIX}}", EscapeForJsString(linkUrlPrefix))
-            .Replace("{{IS_LINKING}}", isLinking ? "true" : "false");
+            .Replace("{{IS_LINKING}}", isLinking ? "true" : "false")
+            .Replace("{{APP_VERSION}}", EscapeForJsString(appVersion));
 
         return BaseTemplate.Value.Replace("{{DYNAMIC_SCRIPT}}", payload);
     }

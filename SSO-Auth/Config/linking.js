@@ -59,9 +59,13 @@ const ssoConfigLinking = {
       //provider_link.classList.add("sso-provider-" + provider_name_css);
       add_provider.classList.add("sso-provider");
 
-      // Path case must match server route (SSOController)
+      // Path case must match server route (SSOController); encode provider name for path safety
       add_provider.href = ApiClient.getUrl(
-        "sso/" + provider_mode + "/p/" + provider_name + "?isLinking=true",
+        "sso/" +
+          provider_mode +
+          "/p/" +
+          encodeURIComponent(provider_name) +
+          "?isLinking=true",
       );
 
       container.appendChild(provider_config);

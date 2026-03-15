@@ -20,7 +20,9 @@ const ssoConfigurationPage = {
   populateSamlProviders: (page, samlConfigs) => {
     const sel = page.querySelector("#selectSamlProvider");
     if (!sel) return;
-    sel.querySelectorAll("option").forEach((opt) => opt.remove());
+    sel.querySelectorAll("option").forEach((opt) => {
+      opt.remove();
+    });
     Object.keys(samlConfigs).forEach((name) => {
       sel.appendChild(new Option(name, name));
     });
@@ -74,6 +76,7 @@ const ssoConfigurationPage = {
 
     const checkboxes = folders.Items.map((folder) => {
       var out = document.createElement("label");
+      out.className = "emby-checkbox-label";
       var input = document.createElement("input");
       input.setAttribute("is", "emby-checkbox");
       input.className = "folder-checkbox chkFolder";
@@ -354,6 +357,15 @@ const ssoConfigurationPage = {
     );
   },
   saveSamlProvider: (page, provider_name) => {
+    const name = (provider_name || "").trim();
+    if (name === "") {
+      if (typeof Dashboard !== "undefined" && Dashboard.alert) {
+        Dashboard.alert("Provider name cannot be empty.");
+      } else {
+        window.alert("Provider name cannot be empty.");
+      }
+      return Promise.resolve();
+    }
     return new Promise((resolve) => {
       ApiClient.getPluginConfiguration(
         ssoConfigurationPage.pluginUniqueId,
@@ -409,16 +421,16 @@ const ssoConfigurationPage = {
           ? ssoConfigurationPage.serializeRoleMappings(roleMapEl)
           : [];
 
-        config.SamlConfigs[provider_name] = current_config;
+        config.SamlConfigs[name] = current_config;
         ApiClient.updatePluginConfiguration(
           ssoConfigurationPage.pluginUniqueId,
           config,
         ).then(function (result) {
           Dashboard.processPluginConfigurationUpdateResult(result);
           ssoConfigurationPage.loadConfiguration(page);
-          ssoConfigurationPage.loadSamlProvider(page, provider_name);
+          ssoConfigurationPage.loadSamlProvider(page, name);
           const sel = page.querySelector("#selectSamlProvider");
-          if (sel) sel.value = provider_name;
+          if (sel) sel.value = name;
           if (typeof Dashboard !== "undefined" && Dashboard.alert) {
             Dashboard.alert("Settings saved.");
           } else {

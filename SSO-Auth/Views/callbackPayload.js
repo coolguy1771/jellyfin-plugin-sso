@@ -67,12 +67,13 @@ async function main() {
     }
     var deviceId = localStorage.getItem("_deviceId2");
     var appName = "Jellyfin Web";
-    var appVersion = "10.8.0";
+    var appVersion = "{{APP_VERSION}}";
     var deviceName = getDeviceName();
 
     var request = {deviceId, appName, appVersion, deviceName, data};
 
-    if ({{IS_LINKING}}) await link(request);
+    var IS_LINKING_FLAG = {{IS_LINKING}};
+    if (typeof IS_LINKING_FLAG !== 'undefined' && IS_LINKING_FLAG) await link(request);
 
     var url = '{{AUTH_URL}}';
 

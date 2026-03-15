@@ -34,7 +34,8 @@ public sealed class WebResponseTests
     {
         var html = WebResponse.Generator("x", "p", "https://h.example", "OID", isLinking);
 
-        html.Should().Contain("if (" + expected + ") await link(request)", "IS_LINKING is injected into the callback script conditional");
+        html.Should().Contain("var IS_LINKING_FLAG = " + expected + ";", "IS_LINKING is injected as flag");
+        html.Should().Contain("if (typeof IS_LINKING_FLAG !== 'undefined' && IS_LINKING_FLAG) await link(request)", "conditional uses IS_LINKING_FLAG");
     }
 
     [Fact]

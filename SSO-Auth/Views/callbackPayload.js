@@ -43,10 +43,10 @@ async function link(request) {
     };
     try {
         var res = await fetch(url, { method: 'POST', headers: headers, body: JSON.stringify(request) });
-        if (!res.ok) return undefined;
+        if (!res.ok) return false;
         return await res.text();
     } catch (_) {
-        return undefined;
+        return false;
     }
 }
 
@@ -73,7 +73,13 @@ async function main() {
     var request = {deviceId, appName, appVersion, deviceName, data};
 
     var IS_LINKING_FLAG = {{IS_LINKING}};
-    if (typeof IS_LINKING_FLAG !== 'undefined' && IS_LINKING_FLAG) await link(request);
+    if (typeof IS_LINKING_FLAG === 'boolean' && IS_LINKING_FLAG) {
+        var linkResult = await link(request);
+        if (linkResult === false) {
+            showLoginError();
+            return;
+        }
+    }
 
     var url = '{{AUTH_URL}}';
 

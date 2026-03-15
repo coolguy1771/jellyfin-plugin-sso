@@ -349,7 +349,7 @@ public class SSOController : ControllerBase
             bool newPath = config.NewPath;
             if (!isLinking)
             {
-                newPath = Request.Path.Value?.Contains("/OID/redirect", StringComparison.InvariantCultureIgnoreCase) == true;
+                newPath = Request.Path.Value?.Contains("/OID/start", StringComparison.InvariantCultureIgnoreCase) == true;
                 config.NewPath = newPath;
             }
 

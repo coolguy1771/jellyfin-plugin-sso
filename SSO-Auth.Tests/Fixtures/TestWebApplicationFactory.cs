@@ -24,7 +24,7 @@ namespace Jellyfin.Plugin.SSO_Auth.Tests.Fixtures;
 
 public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
 {
-    private static readonly ConcurrentBag<string> TempDirs = new();
+    private readonly ConcurrentBag<string> _tempDirs = new();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -45,7 +45,7 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
             services.AddSingleton(_ => Mock.Of<IServerConfigurationManager>());
             services.AddSingleton<IOidStateStore>(_ => new OidStateStore());
 
-            services.AddSingleton<IStartupFilter, SetSSOPluginInstanceStartupFilter>();
+            services.AddSingleton<IStartupFilter>(_ => new SetSSOPluginInstanceStartupFilter(_tempDirs));
         });
     }
 
@@ -67,7 +67,7 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
     {
         if (disposing)
         {
-            foreach (var dir in TempDirs)
+            foreach (var dir in _tempDirs)
             {
                 try
                 {
@@ -82,7 +82,7 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
                 }
             }
 
-            TempDirs.Clear();
+            _tempDirs.Clear();
         }
 
         base.Dispose(disposing);
@@ -90,6 +90,13 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
 
     private sealed class SetSSOPluginInstanceStartupFilter : IStartupFilter
     {
+        private readonly ConcurrentBag<string> _tempDirs;
+
+        public SetSSOPluginInstanceStartupFilter(ConcurrentBag<string> tempDirs)
+        {
+            _tempDirs = tempDirs;
+        }
+
         public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)
         {
             return app =>
@@ -99,8 +106,8 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
                 var configPath = Path.Combine(Path.GetTempPath(), "jellyfin-sso-test-config-" + suffix);
                 Directory.CreateDirectory(pluginsPath);
                 Directory.CreateDirectory(configPath);
-                TempDirs.Add(pluginsPath);
-                TempDirs.Add(configPath);
+                _tempDirs.Add(pluginsPath);
+                _tempDirs.Add(configPath);
 
                 var paths = new Mock<IApplicationPaths>();
                 paths.Setup(p => p.PluginsPath).Returns(pluginsPath);

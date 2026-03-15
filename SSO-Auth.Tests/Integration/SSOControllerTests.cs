@@ -14,23 +14,12 @@ public sealed class SSOControllerTests : IClassFixture<TestWebApplicationFactory
         _client = factory.CreateClient();
     }
 
-    [Fact]
-    public async Task OID_GetNames_ReturnsOkWithEmptyOrArray()
+    [Theory]
+    [InlineData("/SSO/OID/GetNames")]
+    [InlineData("/SSO/SAML/GetNames")]
+    public async Task GetNames_ReturnsOkWithEmptyOrArray(string route)
     {
-        var response = await _client.GetAsync("/SSO/OID/GetNames");
-
-        response.IsSuccessStatusCode.Should().BeTrue();
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
-        var content = await response.Content.ReadAsStringAsync();
-        content.Should().NotBeNull();
-        var names = JsonSerializer.Deserialize<string[]>(content);
-        names.Should().NotBeNull().And.BeAssignableTo<string[]>();
-    }
-
-    [Fact]
-    public async Task SAML_GetNames_ReturnsOkWithEmptyOrArray()
-    {
-        var response = await _client.GetAsync("/SSO/SAML/GetNames");
+        var response = await _client.GetAsync(route);
 
         response.IsSuccessStatusCode.Should().BeTrue();
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");

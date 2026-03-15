@@ -103,8 +103,13 @@ public static class WebResponse
 
         var idnMapping = new IdnMapping();
         var punycodeHost = idnMapping.GetAscii(baseUri.Host);
-        var builder = new UriBuilder(baseUri) { Host = punycodeHost };
-        var punycodeBaseUrl = builder.Uri.GetLeftPart(UriPartial.Authority);
+        var builder = new UriBuilder(baseUri)
+        {
+            Host = punycodeHost,
+            Path = baseUri.AbsolutePath,
+            Query = baseUri.Query
+        };
+        var punycodeBaseUrl = builder.Uri.GetLeftPart(UriPartial.Path).TrimEnd('/');
 
         var authUrl = punycodeBaseUrl + "/sso/" + mode + "/Auth/" + provider;
         var linkUrlPrefix = punycodeBaseUrl + "/sso/" + mode + "/Link/" + provider + "/";
@@ -119,6 +124,6 @@ public static class WebResponse
             .Replace("{{IS_LINKING}}", isLinking ? "true" : "false")
             .Replace("{{APP_VERSION}}", EscapeForJsString(appVersion));
 
-        return BaseTemplate.Value.Replace("{{DYNAMIC_SCRIPT}}", payload);
+        return BaseTemplate.Value.Replace("DYNAMIC_SCRIPT;", payload);
     }
 }

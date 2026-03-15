@@ -12,10 +12,11 @@ public sealed class WebResponseTests
         var data = "payload with 'quote' and \\backslash";
         var html = WebResponse.Generator(data, "p1", "https://jellyfin.example", "OID", false);
 
+        var escapedPayload = "payload with \\'quote\\' and \\\\backslash";
+        html.Should().Contain(escapedPayload, "escaped payload must be injected");
         html.Should().NotContain("{{DYNAMIC_SCRIPT}}");
-        html.Should().Contain("\\\\");
-        html.Should().Contain("\\'");
-        html.Should().NotContain("payload with 'quote'");
+        html.Should().NotContain("DYNAMIC_SCRIPT;", "raw sentinel must be replaced");
+        html.Should().NotContain("payload with 'quote'", "raw unescaped data must not appear");
     }
 
     [Fact]
@@ -35,7 +36,7 @@ public sealed class WebResponseTests
         var html = WebResponse.Generator("x", "p", "https://h.example", "OID", isLinking);
 
         html.Should().Contain("var IS_LINKING_FLAG = " + expected + ";", "IS_LINKING is injected as flag");
-        html.Should().Contain("if (typeof IS_LINKING_FLAG !== 'undefined' && IS_LINKING_FLAG) await link(request)", "conditional uses IS_LINKING_FLAG");
+        html.Should().Contain("typeof IS_LINKING_FLAG === 'boolean' && IS_LINKING_FLAG", "conditional uses IS_LINKING_FLAG");
     }
 
     [Fact]

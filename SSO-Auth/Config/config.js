@@ -516,6 +516,16 @@ const ssoConfigurationPage = {
   },
   saveProvider: (page, provider_name) => {
     return new Promise((resolve) => {
+      provider_name = (provider_name || "").trim();
+      if (provider_name === "") {
+        if (typeof Dashboard !== "undefined" && Dashboard.alert) {
+          Dashboard.alert("Provider name cannot be blank.");
+        } else {
+          window.alert("Provider name cannot be blank.");
+        }
+        resolve();
+        return;
+      }
       const form_elements = ssoConfigurationPage.listArgumentsByType(page);
 
       ApiClient.getPluginConfiguration(

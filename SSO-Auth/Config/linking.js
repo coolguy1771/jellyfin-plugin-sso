@@ -59,8 +59,9 @@ const ssoConfigLinking = {
       //provider_link.classList.add("sso-provider-" + provider_name_css);
       add_provider.classList.add("sso-provider");
 
+      // Path case must match server route (SSOController)
       add_provider.href = ApiClient.getUrl(
-        `/SSO/${provider_mode}/p/${provider_name}?isLinking=true`,
+        "sso/" + provider_mode + "/p/" + provider_name + "?isLinking=true",
       );
 
       container.appendChild(provider_config);
@@ -77,8 +78,6 @@ const ssoConfigLinking = {
         true,
       ).then((resp) => {
         resp.json().then((provider_map) => {
-          console.log({ provider_map, currentUserId });
-
           Object.keys(provider_map).forEach((provider_name) => {
             const provider_container = container.querySelector(
               `.sso-provider-existing-links-container[data-provider="${provider_name}"]`,
@@ -163,8 +162,19 @@ const ssoConfigLinking = {
         });
       });
 
-    Promise.all(delete_requests).then((values) => {
-      console.log({ message: "Delete requests handled", values });
+    Promise.allSettled(delete_requests).then((results) => {
+      const failed = results.filter((r) => r.status === "rejected");
+      if (failed.length > 0) {
+        const msg =
+          failed.length === delete_requests.length
+            ? "Could not remove the selected links."
+            : `One or more links could not be removed (${failed.length} failed).`;
+        if (typeof Dashboard !== "undefined" && Dashboard.alert) {
+          Dashboard.alert(msg);
+        } else {
+          window.alert(msg);
+        }
+      }
       window.location.reload();
     });
   },

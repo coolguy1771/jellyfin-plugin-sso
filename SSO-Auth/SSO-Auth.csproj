@@ -25,6 +25,8 @@
     <EmbeddedResource Include="Views\apiClient.js" />
     <EmbeddedResource Include="Views\jellyfin-apiClient.esm.min.js" />
     <EmbeddedResource Include="Views\emby-restyle.css" />
+    <EmbeddedResource Include="Views\callbackBase.html" />
+    <EmbeddedResource Include="Views\callbackPayload.js" />
   </ItemGroup>
 
   <ItemGroup>

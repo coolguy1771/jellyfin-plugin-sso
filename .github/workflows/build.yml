@@ -16,13 +16,16 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v2
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v1
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "${{ inputs.dotnet-version }}"
+
+      - name: Restore, build solution and run tests
+        run: dotnet restore SSO-Auth.sln && dotnet build SSO-Auth.sln -c Release --no-restore && dotnet test SSO-Auth.sln -c Release --no-build --verbosity normal
 
       - name: Build Jellyfin Plugin
         uses: oddstr13/jellyfin-plugin-repository-manager@9497a0a499416cc572ed2e07a391d9f943a37b4d # v1.1.1
@@ -31,7 +34,7 @@ jobs:
           dotnet-target: "${{ inputs.dotnet-target }}"
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # tag=v4.6.2
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # 7.0.0
         with:
           name: build-artifact
           retention-days: 30

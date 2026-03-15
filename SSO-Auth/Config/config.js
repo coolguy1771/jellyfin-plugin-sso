@@ -4,11 +4,22 @@ const ssoConfigurationPage = {
     ApiClient.getPluginConfiguration(ssoConfigurationPage.pluginUniqueId).then(
       (config) => {
         ssoConfigurationPage.populateProviders(page, config.OidConfigs);
+        ssoConfigurationPage.populateSamlProviders(page, config.SamlConfigs || {});
       },
     );
 
     const folder_container = page.querySelector("#EnabledFolders");
     ssoConfigurationPage.populateFolders(folder_container);
+    const saml_folder_container = page.querySelector("#SamlEnabledFolders");
+    if (saml_folder_container) ssoConfigurationPage.populateFolders(saml_folder_container);
+  },
+  populateSamlProviders: (page, samlConfigs) => {
+    const sel = page.querySelector("#selectSamlProvider");
+    if (!sel) return;
+    sel.querySelectorAll("option").forEach((opt) => opt.remove());
+    Object.keys(samlConfigs).forEach((name) => {
+      sel.appendChild(new Option(name, name));
+    });
   },
   populateProviders: (page, providers) => {
     // Clear providers in case there are out of date ones
@@ -59,17 +70,15 @@ const ssoConfigurationPage = {
 
     const checkboxes = folders.Items.map((folder) => {
       var out = document.createElement("label");
-
-      out.innerHTML = `
-        <input
-          is="emby-checkbox"
-          class="folder-checkbox chkFolder"
-          data-id="${folder.Id}"
-          type="checkbox"
-        />
-        <span>${folder.Name}</span>
-      `;
-
+      var input = document.createElement("input");
+      input.setAttribute("is", "emby-checkbox");
+      input.className = "folder-checkbox chkFolder";
+      input.setAttribute("data-id", String(folder.Id));
+      input.type = "checkbox";
+      var span = document.createElement("span");
+      span.textContent = folder.Name != null ? folder.Name : "";
+      out.appendChild(input);
+      out.appendChild(span);
       return out;
     });
 
@@ -137,19 +146,17 @@ const ssoConfigurationPage = {
     mapping_elements.forEach((e) => container.appendChild(e));
   },
   serializeRoleMappings: (container) => {
-    var out = [];
-    const roles = [
-      ...container.querySelectorAll(".sso-role-mapping-container"),
-    ].forEach((elem) => {
-      const role = elem.querySelector(".sso-role-mapping-name").value;
-      const checklist = elem.querySelector(".sso-folder-list");
-
-      out.push({
-        Role: role,
-        Folders: ssoConfigurationPage.serializeEnabledFolders(checklist),
+    const out = [];
+    container
+      .querySelectorAll(".sso-role-mapping-container")
+      .forEach((elem) => {
+        const role = elem.querySelector(".sso-role-mapping-name").value;
+        const checklist = elem.querySelector(".sso-folder-list");
+        out.push({
+          Role: role,
+          Folders: ssoConfigurationPage.serializeEnabledFolders(checklist),
+        });
       });
-    });
-
     return out;
   },
   handleRoleMappingRemove: (evt) => {
@@ -218,7 +225,8 @@ const ssoConfigurationPage = {
         page.querySelector("#OidProviderName").value = provider_name;
 
         form_elements.text_fields.forEach((id) => {
-          if (provider[id]) page.querySelector("#" + id).value = provider[id];
+          const el = page.querySelector("#" + id);
+          if (el) el.value = provider[id] != null ? String(provider[id]) : "";
         });
 
         form_elements.json_fields.forEach((id) => {
@@ -244,7 +252,8 @@ const ssoConfigurationPage = {
         });
 
         form_elements.check_fields.forEach((id) => {
-          if (provider[id]) page.querySelector("#" + id).checked = provider[id];
+          const el = page.querySelector("#" + id);
+          if (el) el.checked = !!provider[id];
         });
 
         form_elements.role_map_fields.forEach((id) => {
@@ -254,6 +263,133 @@ const ssoConfigurationPage = {
         });
       },
     );
+  },
+  samlFormFieldMap: {
+    SamlEndpoint: "SamlEndpoint",
+    SamlClientId: "SamlClientId",
+    SamlCertificate: "SamlCertificate",
+    Enabled: "SamlEnabled",
+    EnableAuthorization: "SamlEnableAuthorization",
+    EnableAllFolders: "SamlEnableAllFolders",
+    Roles: "SamlRoles",
+    AdminRoles: "SamlAdminRoles",
+    EnableFolderRoles: "SamlEnableFolderRoles",
+    EnableLiveTvRoles: "SamlEnableLiveTvRoles",
+    LiveTvRoles: "SamlLiveTvRoles",
+    LiveTvManagementRoles: "SamlLiveTvManagementRoles",
+    EnableLiveTv: "SamlEnableLiveTv",
+    EnableLiveTvManagement: "SamlEnableLiveTvManagement",
+    DefaultProvider: "SamlDefaultProvider",
+    NewPath: "SamlNewPath",
+    SchemeOverride: "SamlSchemeOverride",
+    PortOverride: "SamlPortOverride",
+  },
+  loadSamlProvider: (page, provider_name) => {
+    ApiClient.getPluginConfiguration(ssoConfigurationPage.pluginUniqueId).then(
+      (config) => {
+        const provider = (config.SamlConfigs || {})[provider_name] || {};
+        const map = ssoConfigurationPage.samlFormFieldMap;
+
+        page.querySelector("#SamlProviderName").value = provider_name;
+
+        Object.keys(map).forEach((configKey) => {
+          const formId = map[configKey];
+          const el = page.querySelector("#" + formId);
+          if (!el) return;
+          const val = provider[configKey];
+          if (configKey === "PortOverride" || configKey === "SchemeOverride" || configKey === "SamlEndpoint" || configKey === "SamlClientId" || configKey === "SamlCertificate" || configKey === "DefaultProvider") {
+            el.value = val != null ? String(val) : "";
+          } else if (configKey === "Roles" || configKey === "AdminRoles" || configKey === "LiveTvRoles" || configKey === "LiveTvManagementRoles") {
+            ssoConfigurationPage.fillTextList(Array.isArray(val) ? val : [], el);
+          } else if (configKey === "Enabled" || configKey === "EnableAuthorization" || configKey === "EnableAllFolders" || configKey === "EnableFolderRoles" || configKey === "EnableLiveTvRoles" || configKey === "EnableLiveTv" || configKey === "EnableLiveTvManagement" || configKey === "NewPath") {
+            el.checked = !!val;
+          }
+        });
+
+        const foldersEl = page.querySelector("#SamlEnabledFolders");
+        if (foldersEl && provider.EnabledFolders) {
+          ssoConfigurationPage.populateEnabledFolders(provider.EnabledFolders, foldersEl);
+        }
+        const roleMapEl = page.querySelector("#SamlFolderRoleMapping");
+        if (roleMapEl && provider.FolderRoleMapping) {
+          ssoConfigurationPage.populateRoleMappings(provider.FolderRoleMapping, roleMapEl);
+        } else if (roleMapEl) {
+          ssoConfigurationPage.populateRoleMappings([], roleMapEl);
+        }
+      },
+    );
+  },
+  saveSamlProvider: (page, provider_name) => {
+    return new Promise((resolve) => {
+      ApiClient.getPluginConfiguration(ssoConfigurationPage.pluginUniqueId).then(
+        (config) => {
+          if (!config.SamlConfigs) config.SamlConfigs = {};
+          const current_config = {};
+          const map = ssoConfigurationPage.samlFormFieldMap;
+
+          Object.keys(map).forEach((configKey) => {
+            const formId = map[configKey];
+            const el = page.querySelector("#" + formId);
+            if (!el) return;
+            if (configKey === "PortOverride") {
+              const raw = (el.value || "").trim();
+              const num = raw === "" ? null : parseInt(raw, 10);
+              current_config[configKey] = num !== null && !isNaN(num) ? num : null;
+            } else if (configKey === "SamlEndpoint" || configKey === "SamlClientId" || configKey === "SamlCertificate" || configKey === "SchemeOverride" || configKey === "DefaultProvider") {
+              current_config[configKey] = (el.value || "").trim() || null;
+            } else if (configKey === "Roles" || configKey === "AdminRoles" || configKey === "LiveTvRoles" || configKey === "LiveTvManagementRoles") {
+              current_config[configKey] = ssoConfigurationPage.parseTextList(el);
+            } else if (configKey === "Enabled" || configKey === "EnableAuthorization" || configKey === "EnableAllFolders" || configKey === "EnableFolderRoles" || configKey === "EnableLiveTvRoles" || configKey === "EnableLiveTv" || configKey === "EnableLiveTvManagement" || configKey === "NewPath") {
+              current_config[configKey] = !!el.checked;
+            }
+          });
+
+          const foldersEl = page.querySelector("#SamlEnabledFolders");
+          current_config.EnabledFolders = foldersEl ? ssoConfigurationPage.serializeEnabledFolders(foldersEl) : [];
+          const roleMapEl = page.querySelector("#SamlFolderRoleMapping");
+          current_config.FolderRoleMapping = roleMapEl ? ssoConfigurationPage.serializeRoleMappings(roleMapEl) : [];
+
+          config.SamlConfigs[provider_name] = current_config;
+          ApiClient.updatePluginConfiguration(ssoConfigurationPage.pluginUniqueId, config).then(function (result) {
+            Dashboard.processPluginConfigurationUpdateResult(result);
+            ssoConfigurationPage.loadConfiguration(page);
+            ssoConfigurationPage.loadSamlProvider(page, provider_name);
+            const sel = page.querySelector("#selectSamlProvider");
+            if (sel) sel.value = provider_name;
+            if (typeof Dashboard !== "undefined" && Dashboard.alert) {
+              Dashboard.alert("Settings saved.");
+            } else {
+              window.alert("Settings saved.");
+            }
+            resolve();
+          });
+        },
+      );
+    });
+  },
+  deleteSamlProvider: (page, provider_name) => {
+    if (!window.confirm("Are you sure you want to delete the SAML provider " + provider_name + "?")) return;
+    return new Promise((resolve) => {
+      ApiClient.getPluginConfiguration(ssoConfigurationPage.pluginUniqueId).then(
+        (config) => {
+          if (!config.SamlConfigs || !config.SamlConfigs.hasOwnProperty(provider_name)) {
+            resolve();
+            return;
+          }
+          delete config.SamlConfigs[provider_name];
+          ApiClient.updatePluginConfiguration(ssoConfigurationPage.pluginUniqueId, config).then(function (result) {
+            Dashboard.processPluginConfigurationUpdateResult(result);
+            ssoConfigurationPage.loadConfiguration(page);
+            if (typeof Dashboard !== "undefined" && Dashboard.alert) {
+              Dashboard.alert("Provider removed");
+            } else {
+              window.alert("Provider removed");
+            }
+            resolve();
+          });
+        },
+      );
+    });
   },
   deleteProvider: (page, provider_name) => {
     if (
@@ -280,7 +416,11 @@ const ssoConfigurationPage = {
           Dashboard.processPluginConfigurationUpdateResult(result);
           ssoConfigurationPage.loadConfiguration(page);
 
-          Dashboard.alert("Provider removed");
+          if (typeof Dashboard !== "undefined" && Dashboard.alert) {
+            Dashboard.alert("Provider removed");
+          } else {
+            window.alert("Provider removed");
+          }
 
           resolve();
         });
@@ -300,9 +440,13 @@ const ssoConfigurationPage = {
         }
 
         form_elements.text_fields.forEach((id) => {
-          const value = page.querySelector("#" + id).value;
-          if (value) {
-            current_config[id] = page.querySelector("#" + id).value;
+          const el = page.querySelector("#" + id);
+          const value = el ? el.value : "";
+          if (id === "PortOverride") {
+            const num = value.trim() === "" ? null : parseInt(value, 10);
+            current_config[id] = num !== null && !isNaN(num) ? num : null;
+          } else if (value) {
+            current_config[id] = value;
           } else {
             current_config[id] = null;
           }
@@ -349,7 +493,11 @@ const ssoConfigurationPage = {
           ssoConfigurationPage.loadProvider(page, provider_name);
 
           page.querySelector("#selectProvider").value = provider_name;
-          Dashboard.alert("Settings saved.");
+          if (typeof Dashboard !== "undefined" && Dashboard.alert) {
+            Dashboard.alert("Settings saved.");
+          } else {
+            window.alert("Settings saved.");
+          }
           resolve();
         });
       });
@@ -402,10 +550,48 @@ export default function (view) {
     const current_mappings =
       ssoConfigurationPage.serializeRoleMappings(container);
     current_mappings.push({ Role: "", Folders: [] });
-    console.log(current_mappings);
     ssoConfigurationPage.populateRoleMappings(current_mappings, container);
   });
 
   view.querySelector("#sso-self-service-link").href =
     ApiClient.getUrl("/SSOViews/linking");
+
+  const loadSamlBtn = view.querySelector("#LoadSamlProvider");
+  if (loadSamlBtn) {
+    loadSamlBtn.addEventListener("click", (e) => {
+      const name = view.querySelector("#selectSamlProvider").value;
+      ssoConfigurationPage.loadSamlProvider(view, name);
+      e.preventDefault();
+      return false;
+    });
+  }
+  const deleteSamlBtn = view.querySelector("#DeleteSamlProvider");
+  if (deleteSamlBtn) {
+    deleteSamlBtn.addEventListener("click", (e) => {
+      const name = view.querySelector("#selectSamlProvider").value;
+      ssoConfigurationPage.deleteSamlProvider(view, name);
+      e.preventDefault();
+      return false;
+    });
+  }
+  const saveSamlBtn = view.querySelector("#SaveSamlProvider");
+  if (saveSamlBtn) {
+    saveSamlBtn.addEventListener("click", (e) => {
+      const name = view.querySelector("#SamlProviderName").value;
+      ssoConfigurationPage.saveSamlProvider(view, name);
+      e.preventDefault();
+      return false;
+    });
+  }
+  const addSamlRoleBtn = view.querySelector("#AddSamlRoleMapping");
+  if (addSamlRoleBtn) {
+    addSamlRoleBtn.addEventListener("click", (e) => {
+      const container = view.querySelector("#SamlFolderRoleMapping");
+      const current = ssoConfigurationPage.serializeRoleMappings(container);
+      current.push({ Role: "", Folders: [] });
+      ssoConfigurationPage.populateRoleMappings(current, container);
+      e.preventDefault();
+      return false;
+    });
+  }
 }

@@ -2,7 +2,7 @@ name: Publish Nightly
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -11,15 +11,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - name: Checkout
+      uses: actions/checkout@v4
     - name: Setup .NET
-      uses: actions/setup-dotnet@v1
+      uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 9.0.x
-    - name: Restore dependencies
-      run: dotnet restore
-    - name: Build Dotnet
-      run: dotnet build --no-restore --warnaserror
+        dotnet-version: "9.0.x"
+    - name: Restore, build and test
+      run: |
+        dotnet restore SSO-Auth.sln
+        dotnet build SSO-Auth.sln -c Release --no-restore
+        dotnet test SSO-Auth.sln -c Release --no-build --verbosity normal
     - name: "Flag as nightly in build.yaml"
       uses: fjogeleit/yaml-update-action@v0.10.0
       with:
